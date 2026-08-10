@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Chat ↔ Work Switcher Probe",
-  "version": "0.0.2",
-  "description": "Read-only probe that compares native Chat and Work request fingerprints without modifying ChatGPT traffic.",
+  "name": "ChatGPT Chat ↔ Work Switcher",
+  "version": "0.1.0",
+  "description": "Experimental same-conversation Chat/Work request switcher with guarded profile matching.",
   "permissions": ["storage", "activeTab"],
   "content_scripts": [
     {
@@ -19,7 +19,7 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Chat ↔ Work Switcher Probe",
+    "default_title": "ChatGPT Chat ↔ Work Switcher",
     "default_popup": "popup.html"
   }
 }
