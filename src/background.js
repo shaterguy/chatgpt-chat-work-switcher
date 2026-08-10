@@ -33,7 +33,7 @@
     await chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
-      files: ['src/profile-core.js', 'src/content.js', 'src/switch-options.js']
+      files: ['src/profile-core.js', 'src/content.js', 'src/switch-options.js', 'src/action-toggle.js']
     });
   }
 
