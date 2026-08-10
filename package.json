@@ -1,0 +1,13 @@
+{
+  "name": "chatgpt-chat-work-switcher",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/background.js && node --check src/action-toggle.js && node --check src/profile-core.js && node --check src/bridge.js && node --check src/stream-monitor.js && node --check src/content.js && node --check src/switch-options.js && node --check src/popup.js && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
