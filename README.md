@@ -1,51 +1,100 @@
-# ChatGPT Chat ↔ Work Switcher — Read-only Probe v0.0.2
+# ChatGPT Chat ↔ Work Switcher — v0.1.0 Preview
 
-Phase 0–1 research build for finding the **real** request-level difference between native Chat and native Work before implementing any same-conversation request mutation.
+Experimental Chrome extension for switching the request profile of the **same existing ChatGPT conversation** between Chat and Work without creating a new conversation or copying the message tree.
 
-## v0.0.2 bug fix
+## Evidence used for this preview
 
-The previous v0.0.1 manifest declared a toolbar action but did not attach a popup or click handler, so clicking the extension icon correctly resulted in no visible action. v0.0.2 fixes that defect by wiring a real toolbar popup to the in-page probe controls.
+A real ChatGPT capture on 2026-08-10 showed that native Chat and native Work both submit to the same endpoint:
 
-## What this build does
+- `POST /backend-api/f/conversation`
+- response: HTTP 200, `text/event-stream`
+- `conversation_id` remained consistent with the current `/c/<conversation_id>` route in both cases
+- `conversation_mode.kind` stayed `primary_assistant` in both cases
 
-- Observes only message-submission candidates sent to `chatgpt.com` backend endpoints.
-- Lets the tester label one native request as Chat and one as Work.
-- Stores only a sanitized request fingerprint: endpoint path, transport, route kind, conversation-ID consistency boolean and short non-sensitive primitive control values.
-- Computes candidate stable differences between Chat and Work.
-- Records response status/path/content-type metadata for the captured request.
-- Never changes the request URL, body, headers, `conversation_id`, message tree or response.
-- Never creates a new conversation or copies/handoffs messages.
+The control-plane differences observed in that pair were:
 
-## Data intentionally excluded
+| field | Chat | Work |
+| --- | --- | --- |
+| `model` | `gpt-5-6-thinking` | `gpt-5.6-luna-wm` |
+| `thinking_effort` | `max` | `standard` |
+| `conversation_origin` | absent | `tpp` |
+| `service_tier` | absent | `standard` |
 
-The probe skips message arrays, message/content/text/parts fields, prompts, attachments/files, conversation/message/user/account IDs, tokens, cookies, authorization/session/credential fields, UUID-like values, URLs, emails and long opaque strings.
+Volatile browser context such as `client_contextual_info.time_since_loaded`, dimensions, timezone data and unrelated common fields are excluded from the switching profile.
 
-No captured data leaves Chrome extension local storage automatically.
+## What v0.1.0 Preview does
+
+- Adds **Chat로 전환** and **Work로 전환** controls to the toolbar popup and on-page switch bar.
+- Arms a target mode only for the current `/c/<conversation_id>` route.
+- Intercepts the next matching `POST /backend-api/f/conversation` submission in the page's MAIN world.
+- Applies only the captured control-plane differences above, or a newer locally captured profile if available.
+- Refuses to transform when the request does not match the expected source-mode profile.
+- Refuses to transform if the request `conversation_id` disagrees with the current URL conversation ID.
+- Restores `conversation_id` and the complete `messages` array from the original request after patching.
+- Never creates a new conversation and never hands off/copies messages.
+- Keeps the selected target mode armed for later matching submissions in that same conversation.
+- Automatically disables switching after HTTP/network failure or when the conversation changes.
+
+## Important limitation
+
+This is the first live-switching preview. The request-level evidence supports a same-endpoint body-profile experiment, but server-side acceptance of **Chat → Work → Chat inside one already-existing conversation** still requires live account testing.
+
+A successful HTTP 200 is necessary but not sufficient proof that the server actually executed the requested target mode. The tester must verify the resulting ChatGPT UI/model behavior and then return the diagnostic JSON so the next revision can tighten the acceptance check.
 
 ## Install
 
-1. Download and unzip `chatgpt-chat-work-switcher-probe-v0.0.2.zip`.
+1. Download and unzip `chatgpt-chat-work-switcher-v0.1.0-preview.zip`.
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
-4. Remove the older probe build if it is already installed.
-5. Choose **Load unpacked** and select the unzipped folder containing `manifest.json`.
-6. Refresh the already-open `https://chatgpt.com` tab once.
+4. Remove the old probe or replace its files, then choose **Load unpacked** for the folder containing `manifest.json`.
+5. Refresh all open `https://chatgpt.com` tabs once.
 
-## Capture procedure
+## First live test
 
-1. Open a conversation that is natively running as **Chat**.
-2. Click the extension toolbar icon. A popup must open with `Chat 기록`, `Work 기록`, `진단 보기`, and `기록 초기화` controls.
-3. Click **Chat 기록**, then send one harmless message in the ChatGPT page.
-4. Open a conversation that is natively running as **Work**.
-5. Click the extension toolbar icon → **Work 기록**, then send one harmless message.
-6. Click the extension toolbar icon → **진단 보기** and copy the diagnostic JSON back into the development conversation for analysis.
-7. For stronger evidence, repeat one additional capture in each mode; the comparison becomes `high` confidence when each mode has at least two samples and its candidate fields are stable.
+Use an expendable existing conversation first.
 
-If the popup says the probe is not loaded, refresh the ChatGPT tab once. If the current tab is not `https://chatgpt.com`, the popup reports that explicitly instead of appearing to do nothing.
+### Chat → Work
 
-## Why this is read-only
+1. Open a conversation currently behaving as native Chat.
+2. Click the extension icon.
+3. Click **Work로 전환**.
+4. Send one harmless message in the same conversation.
+5. Confirm that the browser URL still has exactly the same `/c/<conversation_id>`.
+6. Check whether the response behaves as Work rather than ordinary Chat.
+7. Open **진단 보기** and copy the result.
 
-The goal is to prove where mode selection actually lives before touching a live conversation. If Chat and Work use the same endpoint with a stable body-level difference, Phase 2 can test a minimal same-conversation patch. If the endpoint differs or mode is bound to a task/session/conversation metadata layer, the next implementation must target that layer explicitly instead of faking a UI switch.
+### Work → Chat
+
+1. In the same conversation, click **Chat로 전환**.
+2. Send another harmless message.
+3. Confirm that the same `/c/<conversation_id>` is still present.
+4. Check whether the response now behaves as ordinary Chat.
+5. Copy diagnostics again.
+
+## Optional recalibration
+
+The popup still exposes **Chat 기록** and **Work 기록** under `프로필 다시 기록`.
+
+If ChatGPT changes its private request schema:
+
+1. Record one native Chat submission.
+2. Record one native Work submission.
+3. The extension recomputes a control-only profile.
+4. With two stable samples per mode, the diagnostic confidence becomes `high`.
+
+## Safety rules
+
+The transformer never intentionally changes:
+
+- browser route / conversation URL
+- `conversation_id`
+- `messages`
+- message IDs / parent message IDs
+- prompt or message contents
+- attachments
+- tokens, cookies or authorization headers
+
+If the source request no longer resembles the captured source mode, the extension bypasses the request instead of guessing.
 
 ## Development
 
@@ -53,4 +102,4 @@ The goal is to prove where mode selection actually lives before touching a live 
 npm run check
 ```
 
-CI runs syntax checks, unit tests and packages a loadable ZIP.
+CI runs syntax checks, unit tests, popup contract tests and packages the preview ZIP.
