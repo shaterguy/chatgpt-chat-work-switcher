@@ -85,7 +85,7 @@
 
   function diagnosticText() {
     return JSON.stringify({
-      probeVersion: '0.0.1',
+      probeVersion: '0.0.2',
       readOnly: true,
       page: {
         routeKind: location.pathname.includes('/c/') ? (location.pathname.includes('/g/') ? 'project-conversation' : 'conversation') : 'non-conversation'
@@ -94,6 +94,19 @@
       comparison: state.comparison,
       samples: state.samples
     }, null, 2);
+  }
+
+  function snapshot() {
+    return {
+      probeVersion: '0.0.2',
+      captureMode,
+      sampleCounts: {
+        chat: state.samples.chat.length,
+        work: state.samples.work.length
+      },
+      comparison: state.comparison,
+      routeKind: location.pathname.includes('/c/') ? 'conversation' : 'non-conversation'
+    };
   }
 
   function render() {
@@ -119,7 +132,7 @@
         <button class="cw-gear" data-role="gear" title="설정">⚙</button>
       </div>
       <section class="cw-panel" data-role="panel" hidden>
-        <div class="cw-title">Chat ↔ Work Probe <span>v0.0.1 · READ ONLY</span></div>
+        <div class="cw-title">Chat ↔ Work Probe <span>v0.0.2 · READ ONLY</span></div>
         <div class="cw-readiness" data-role="readiness"></div>
         <p class="cw-help">이 빌드는 전환 요청을 만들지 않습니다. native Chat과 native Work에서 각각 한 번씩 메시지 전송 요청을 관찰해 endpoint와 민감정보가 제거된 제어 필드 차이만 기록합니다.</p>
         <p class="cw-help">프롬프트, 메시지 배열, conversation/message ID, 토큰, 쿠키, 인증정보, 첨부파일은 저장하지 않습니다.</p>
@@ -164,6 +177,33 @@
     if (!data || data.channel !== CHANNEL || data.direction !== 'bridge-to-extension') return;
     if (data.type === 'CW_CAPTURED') acceptSample(data.mode, data.sample);
     if (data.type === 'CW_CAPTURE_RESPONSE') attachResponse(data);
+  });
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message || message.source !== 'chat-work-switcher-popup') return undefined;
+
+    (async () => {
+      if (message.type === 'CW_POPUP_GET_STATE') {
+        return { ok: true, snapshot: snapshot() };
+      }
+      if (message.type === 'CW_POPUP_SET_CAPTURE') {
+        if (!['chat', 'work'].includes(message.mode)) throw new Error('지원하지 않는 기록 모드입니다.');
+        setCapture(message.mode);
+        return { ok: true, snapshot: snapshot() };
+      }
+      if (message.type === 'CW_POPUP_RESET') {
+        await reset();
+        return { ok: true, snapshot: snapshot() };
+      }
+      if (message.type === 'CW_POPUP_GET_DIAGNOSTICS') {
+        return { ok: true, text: diagnosticText(), snapshot: snapshot() };
+      }
+      throw new Error('알 수 없는 팝업 명령입니다.');
+    })().then(sendResponse).catch((error) => {
+      sendResponse({ ok: false, error: error?.message || String(error) });
+    });
+
+    return true;
   });
 
   (async () => {
