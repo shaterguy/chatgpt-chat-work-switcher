@@ -22,6 +22,8 @@ The control-plane differences observed in that pair were:
 
 Volatile browser context such as `client_contextual_info.time_since_loaded`, dimensions, timezone data and unrelated common fields are excluded from the switching profile.
 
+The supplied v0.0.2 diagnostic had `comparison: null` despite containing one Chat and one Work sample. v0.1.0 recomputes the comparison on demand and falls back to the sanitized observed four-field profile above when no valid local comparison exists.
+
 ## What v0.1.0 Preview does
 
 - Adds **Chat로 전환** and **Work로 전환** controls to the toolbar popup and on-page switch bar.
