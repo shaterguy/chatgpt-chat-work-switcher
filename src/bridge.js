@@ -277,9 +277,10 @@
     if (typeof init?.body === 'string') return runWithBody(init.body);
 
     if (input instanceof Request && !init?.body) {
-      return input.clone().text()
-        .then(runWithBody)
-        .catch(() => originalFetch.call(this, input, init));
+      const clonedText = input.clone().text().catch(() => null);
+      return clonedText.then((bodyText) => bodyText === null
+        ? originalFetch.call(this, input, init)
+        : runWithBody(bodyText));
     }
 
     return originalFetch.call(this, input, init);
