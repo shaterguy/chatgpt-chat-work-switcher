@@ -2,6 +2,10 @@
 
 Phase 0–1 research build for finding the **real** request-level difference between native Chat and native Work before implementing any same-conversation request mutation.
 
+## v0.0.2 bug fix
+
+The previous v0.0.1 manifest declared a toolbar action but did not attach a popup or click handler, so clicking the extension icon correctly resulted in no visible action. v0.0.2 fixes that defect by wiring a real toolbar popup to the in-page probe controls.
+
 ## What this build does
 
 - Observes only message-submission candidates sent to `chatgpt.com` backend endpoints.
