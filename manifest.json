@@ -1,25 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Chat ↔ Work Switcher",
-  "version": "0.1.0",
-  "description": "Experimental same-conversation Chat/Work request switcher with guarded profile matching.",
+  "name": "ChatGPT Chat ↔ Work Switcher Preview",
+  "version": "0.1.1",
+  "description": "Experimental same-conversation Chat/Work switcher with selectable model/reasoning and automatic layout reload.",
   "permissions": ["storage", "activeTab"],
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/profile-core.js", "src/bridge.js"],
+      "js": ["src/profile-core.js", "src/bridge.js", "src/stream-monitor.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/profile-core.js", "src/content.js"],
+      "js": ["src/profile-core.js", "src/content.js", "src/switch-options.js"],
       "css": ["src/content.css"],
       "run_at": "document_start"
     }
   ],
   "action": {
-    "default_title": "ChatGPT Chat ↔ Work Switcher",
+    "default_title": "ChatGPT Chat ↔ Work Switcher Preview",
     "default_popup": "popup.html"
   }
 }
