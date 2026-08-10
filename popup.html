@@ -10,10 +10,34 @@
   <main class="popup-shell">
     <header>
       <h1>Chat ↔ Work Switcher</h1>
-      <span class="badge">v0.1.0 · PREVIEW</span>
+      <span class="badge">v0.1.1 · PREVIEW</span>
     </header>
 
     <p class="status" data-role="status">현재 ChatGPT 탭을 확인하는 중입니다…</p>
+
+    <section class="options" aria-label="switch options">
+      <label>
+        <span>모델</span>
+        <input data-role="model" list="model-options" placeholder="비워두면 목표 모드 기본값">
+      </label>
+      <label>
+        <span>추론 정도</span>
+        <input data-role="thinking-effort" list="effort-options" placeholder="비워두면 목표 모드 기본값">
+      </label>
+      <label class="reload-option">
+        <input type="checkbox" data-role="auto-reload" checked>
+        <span>전환 응답 완료 후 같은 대화를 자동 새로고침해서 새 모드 레이아웃으로 재진입</span>
+      </label>
+    </section>
+
+    <datalist id="model-options">
+      <option value="gpt-5-6-thinking"></option>
+      <option value="gpt-5.6-luna-wm"></option>
+    </datalist>
+    <datalist id="effort-options">
+      <option value="standard"></option>
+      <option value="max"></option>
+    </datalist>
 
     <section class="switch-actions" aria-label="mode switch controls">
       <button data-action="switch-chat">Chat로 전환</button>
@@ -21,7 +45,7 @@
     </section>
     <button class="secondary full" data-action="disable-switch">전환 해제</button>
 
-    <p class="hint">전환 버튼을 누른 뒤 같은 대화에서 다음 메시지를 보내면, conversation ID와 message tree는 그대로 유지하고 확인된 모드 제어 필드만 바꿉니다.</p>
+    <p class="hint">모델/추론 정도를 비워두면 실제 캡처에서 확인된 목표 모드 기본값을 사용합니다. 직접 입력하면 그 값을 우선 적용합니다.</p>
 
     <details>
       <summary>프로필 다시 기록</summary>
