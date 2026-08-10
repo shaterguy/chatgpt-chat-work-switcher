@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
   const pathKey = (path) => JSON.stringify(path);
 
   function leafMap(sample) {
@@ -56,67 +55,21 @@
     return ops;
   }
 
-  function buildProfiles(chatSamples, workSamples) {
+  function buildComparison(chatSamples, workSamples) {
     if (!chatSamples?.length || !workSamples?.length) return null;
     const chatEndpoint = stableEndpoint(chatSamples);
     const workEndpoint = stableEndpoint(workSamples);
     const chatOps = buildTargetOps(chatSamples, workSamples);
     const workOps = buildTargetOps(workSamples, chatSamples);
-    const discriminatorCount = Math.max(chatOps.length, workOps.length);
-    const endpointDiffers = Boolean(chatEndpoint && workEndpoint && chatEndpoint !== workEndpoint);
-
     return {
       version: 1,
-      chat: { ops: chatOps, endpoint: chatEndpoint },
-      work: { ops: workOps, endpoint: workEndpoint },
-      discriminatorCount,
-      endpointDiffers,
+      chat: { endpoint: chatEndpoint, differencesFromWork: chatOps },
+      work: { endpoint: workEndpoint, differencesFromChat: workOps },
+      discriminatorCount: Math.max(chatOps.length, workOps.length),
+      endpointDiffers: Boolean(chatEndpoint && workEndpoint && chatEndpoint !== workEndpoint),
       confidence: chatSamples.length >= 2 && workSamples.length >= 2 ? 'high' : 'provisional'
     };
   }
 
-  function cloneJson(value) {
-    return JSON.parse(JSON.stringify(value));
-  }
-
-  function setAtPath(root, path, value) {
-    let node = root;
-    for (let i = 0; i < path.length - 1; i += 1) {
-      const key = path[i];
-      if (!node[key] || typeof node[key] !== 'object' || Array.isArray(node[key])) node[key] = {};
-      node = node[key];
-    }
-    node[path[path.length - 1]] = value;
-  }
-
-  function removeAtPath(root, path) {
-    let node = root;
-    for (let i = 0; i < path.length - 1; i += 1) {
-      node = node?.[path[i]];
-      if (!node || typeof node !== 'object' || Array.isArray(node)) return;
-    }
-    delete node[path[path.length - 1]];
-  }
-
-  function applyOps(input, ops) {
-    const output = cloneJson(input);
-    let applied = 0;
-    for (const op of ops || []) {
-      if (!Array.isArray(op.path) || op.path.length === 0) continue;
-      if (op.op === 'set') {
-        setAtPath(output, op.path, op.value);
-        applied += 1;
-      } else if (op.op === 'remove') {
-        removeAtPath(output, op.path);
-        applied += 1;
-      }
-    }
-    return { value: output, applied };
-  }
-
-  globalThis.ChatWorkProfileCore = {
-    stableLeaves,
-    buildProfiles,
-    applyOps
-  };
+  globalThis.ChatWorkProfileCore = { stableLeaves, buildComparison };
 })();

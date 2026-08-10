@@ -1,48 +1,44 @@
-# ChatGPT Chat ↔ Work Switcher
+# ChatGPT Chat ↔ Work Switcher — Read-only Probe v0.0.1
 
-Experimental Chrome extension that learns the request-level difference between native Chat and native Work, then applies only that stable difference to later message submissions in the **same existing ChatGPT conversation**.
+Phase 0–1 research build for finding the **real** request-level difference between native Chat and native Work before implementing any same-conversation request mutation.
 
-## What v0.1.0 does
+## What this build does
 
-- Keeps the browser conversation URL and `conversation_id` unchanged.
-- Never copies messages into a new conversation and never creates a handoff conversation.
-- Learns Chat/Work mode fingerprints from native outgoing requests instead of hard-coding a private ChatGPT schema.
-- Ignores message bodies, message arrays, IDs, tokens, cookies, credentials, URLs and long opaque values when learning.
-- Refuses to transform requests if native Chat and Work use different backend endpoints; that case needs a separately verified endpoint-level implementation rather than a blind rewrite.
-- Automatically disables transformation after an HTTP/network failure so the next submission uses native behavior.
+- Observes only message-submission candidates sent to `chatgpt.com` backend endpoints.
+- Lets the tester label one native request as Chat and one as Work.
+- Stores only a sanitized request fingerprint: endpoint path, transport, route kind, conversation-ID consistency boolean and short non-sensitive primitive control values.
+- Computes candidate stable differences between Chat and Work.
+- Records response status/path/content-type metadata for the captured request.
+- Never changes the request URL, body, headers, `conversation_id`, message tree or response.
+- Never creates a new conversation or copies/handoffs messages.
 
-## Install for testing
+## Data intentionally excluded
 
-1. Download/unzip the extension folder or CI ZIP.
+The probe skips message arrays, message/content/text/parts fields, prompts, attachments/files, conversation/message/user/account IDs, tokens, cookies, authorization/session/credential fields, UUID-like values, URLs, emails and long opaque strings.
+
+No captured data leaves Chrome extension local storage automatically.
+
+## Install
+
+1. Download and unzip `chatgpt-chat-work-switcher-probe-v0.0.1.zip`.
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select the folder that contains `manifest.json`.
-5. Open `https://chatgpt.com` and use the small `Chat | Work | ⚙` control at the top-right.
+4. Choose **Load unpacked** and select the unzipped folder containing `manifest.json`.
+5. Refresh `https://chatgpt.com`.
 
-## One-time calibration
-
-Because ChatGPT's private request schema is not a stable public API, v0.1.0 learns the difference from your own account instead of guessing field names.
+## Capture procedure
 
 1. Open a conversation that is natively running as **Chat**.
-2. Open the switcher settings, click **Chat 캡처**, then send one harmless message.
+2. Click **Chat 기록**, then send one harmless message.
 3. Open a conversation that is natively running as **Work**.
-4. Click **Work 캡처**, then send one harmless message.
-5. If a stable same-endpoint mode difference is found, Chat/Work buttons become available in any existing `/c/<conversation_id>` route.
-6. Capture one more request in each native mode later if you want the profile upgraded from `provisional` to `high` confidence.
+4. Click **Work 기록**, then send one harmless message.
+5. Open ⚙ → **진단 보기**.
+6. Copy the diagnostic JSON back into the development conversation for analysis.
+7. For stronger evidence, repeat one additional capture in each mode; the comparison becomes `high` confidence when each mode has at least two samples and its candidate fields are stable.
 
-The extension stores only sanitized control-plane leaf values and endpoint paths. It does not intentionally store prompts, message text, attachments, cookies, auth headers or conversation/message IDs.
+## Why this is read-only
 
-## Safety invariants
-
-- The current URL conversation ID is authoritative.
-- A request whose `conversation_id` disagrees with the current `/c/<id>` route is not transformed.
-- `conversation_id` and the entire `messages` array are copied back from the original request after patching.
-- Endpoint differences are reported but not rewritten in this version.
-- Failed transformed requests disable the transformer; there is no automatic resend that could duplicate a user message.
-
-## Current limitation
-
-This is a real request-transforming PoC, but **server acceptance of Work inside an already-existing Chat conversation must still be verified against the live ChatGPT service**. If OpenAI binds mode above the request-body layer or uses separate endpoints, the extension deliberately stops instead of faking success. The diagnostics view exposes only the sanitized learned delta needed for the next implementation step.
+The goal is to prove where mode selection actually lives before touching a live conversation. If Chat and Work use the same endpoint with a stable body-level difference, Phase 2 can test a minimal same-conversation patch. If the endpoint differs or mode is bound to a task/session/conversation metadata layer, the next implementation must target that layer explicitly instead of faking a UI switch.
 
 ## Development
 
@@ -50,4 +46,4 @@ This is a real request-transforming PoC, but **server acceptance of Work inside 
 npm run check
 ```
 
-The CI workflow runs syntax checks + unit tests and packages a loadable ZIP.
+CI runs syntax checks, unit tests and packages a loadable ZIP.

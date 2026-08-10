@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Chat ↔ Work Switcher",
-  "version": "0.1.0",
-  "description": "Adaptive Chat/Work request-mode switcher that preserves the current ChatGPT conversation.",
+  "name": "ChatGPT Chat ↔ Work Switcher Probe",
+  "version": "0.0.1",
+  "description": "Read-only probe that compares native Chat and Work request fingerprints without modifying ChatGPT traffic.",
   "permissions": ["storage"],
-  "host_permissions": ["https://chatgpt.com/*"],
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
@@ -20,6 +19,6 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Chat ↔ Work Switcher"
+    "default_title": "ChatGPT Chat ↔ Work Switcher Probe"
   }
 }

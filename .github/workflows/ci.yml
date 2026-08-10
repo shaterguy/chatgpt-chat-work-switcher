@@ -21,9 +21,9 @@ jobs:
       - name: Build loadable extension ZIP
         run: |
           mkdir -p dist
-          zip -r dist/chatgpt-chat-work-switcher-v0.1.0.zip manifest.json src README.md LICENSE \
+          zip -r dist/chatgpt-chat-work-switcher-probe-v0.0.1.zip manifest.json src README.md LICENSE \
             -x '*.DS_Store'
       - uses: actions/upload-artifact@v4
         with:
-          name: chatgpt-chat-work-switcher-v0.1.0
-          path: dist/chatgpt-chat-work-switcher-v0.1.0.zip
+          name: chatgpt-chat-work-switcher-probe-v0.0.1
+          path: dist/chatgpt-chat-work-switcher-probe-v0.0.1.zip

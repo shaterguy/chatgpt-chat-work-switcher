@@ -1,18 +1,13 @@
 (() => {
   'use strict';
 
-  const CHANNEL = 'chat-work-switcher-v1';
-  const STORAGE_KEY = 'chatWorkSwitcherStateV1';
+  const CHANNEL = 'chat-work-switcher-probe-v1';
+  const STORAGE_KEY = 'chatWorkSwitcherProbeStateV1';
   const MAX_SAMPLES = 3;
   const core = globalThis.ChatWorkProfileCore;
 
-  let state = {
-    samples: { chat: [], work: [] },
-    profiles: null,
-    modeByConversation: {}
-  };
+  let state = { samples: { chat: [], work: [] }, comparison: null };
   let captureMode = null;
-  let currentConversationId = null;
   let ui = {};
 
   const post = (type, payload = {}) => window.postMessage({
@@ -22,63 +17,30 @@
     ...payload
   }, '*');
 
-  function conversationIdFromUrl() {
-    return location.pathname.match(/\/c\/([0-9a-z-]+)/i)?.[1] || null;
-  }
-
   async function loadState() {
     const stored = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[STORAGE_KEY];
-    if (next && next.samples && next.modeByConversation) state = next;
-    recomputeProfiles();
+    if (stored[STORAGE_KEY]?.samples) state = stored[STORAGE_KEY];
+    recompute();
   }
 
   async function saveState() {
     await chrome.storage.local.set({ [STORAGE_KEY]: state });
   }
 
-  function recomputeProfiles() {
-    state.profiles = core.buildProfiles(state.samples.chat, state.samples.work);
+  function recompute() {
+    state.comparison = core.buildComparison(state.samples.chat, state.samples.work);
   }
 
-  function ready() {
-    return Boolean(state.profiles && state.profiles.discriminatorCount > 0 && !state.profiles.endpointDiffers);
-  }
-
-  function configureCurrentConversation() {
-    currentConversationId = conversationIdFromUrl();
-    if (!currentConversationId || !ready()) {
-      post('CW_DISABLE');
-      render();
-      return;
-    }
-    const mode = state.modeByConversation[currentConversationId];
-    if (!mode) {
-      post('CW_DISABLE');
-      render();
-      return;
-    }
-    const profile = state.profiles[mode];
-    post('CW_CONFIG', {
-      conversationId: currentConversationId,
-      mode,
-      ops: profile.ops
-    });
-    render();
-  }
-
-  async function selectMode(mode) {
-    if (!currentConversationId || !ready()) return;
-    state.modeByConversation[currentConversationId] = mode;
-    await saveState();
-    configureCurrentConversation();
-    setStatus(`${mode === 'chat' ? 'Chat' : 'Work'} 전환 준비됨`, 'ok');
+  function setStatus(text, kind = 'info') {
+    if (!ui.status) return;
+    ui.status.textContent = text;
+    ui.status.dataset.kind = kind;
   }
 
   function setCapture(mode) {
     captureMode = captureMode === mode ? null : mode;
     post('CW_CAPTURE_MODE', { mode: captureMode });
-    setStatus(captureMode ? `${captureMode === 'chat' ? 'Chat' : 'Work'} 요청 1회를 보내 캡처하세요.` : '캡처 중지', 'info');
+    setStatus(captureMode ? `${captureMode === 'chat' ? 'Chat' : 'Work'} native 대화에서 메시지 1회를 보내세요.` : '캡처를 취소했습니다.', 'info');
     render();
   }
 
@@ -88,75 +50,62 @@
     if (state.samples[mode].length > MAX_SAMPLES) state.samples[mode].shift();
     captureMode = null;
     post('CW_CAPTURE_MODE', { mode: null });
-    recomputeProfiles();
+    recompute();
     await saveState();
     render();
-    if (state.profiles?.endpointDiffers) {
-      setStatus('Chat/Work가 서로 다른 endpoint를 사용합니다. 안전상 자동 변환을 중지했습니다.', 'error');
-    } else if (ready()) {
-      setStatus(`프로필 학습 완료 (${state.profiles.discriminatorCount}개 모드 차이)`, 'ok');
-      configureCurrentConversation();
+    if (!state.samples.chat.length || !state.samples.work.length) {
+      setStatus('반대 모드도 1회 캡처하면 차이를 계산합니다.', 'info');
+    } else if (state.comparison?.endpointDiffers) {
+      setStatus('Chat과 Work가 서로 다른 endpoint를 사용합니다. 요청 변조 없이 차이만 기록했습니다.', 'warn');
     } else {
-      setStatus('반대 모드도 한 번 캡처하세요.', 'info');
+      setStatus(`읽기 전용 비교 완료: 안정 후보 ${state.comparison?.discriminatorCount || 0}개`, 'ok');
     }
   }
 
-  async function resetProfiles() {
-    state.samples = { chat: [], work: [] };
-    state.profiles = null;
-    state.modeByConversation = {};
+  async function attachResponse(data) {
+    for (const mode of ['chat', 'work']) {
+      const sample = state.samples[mode].find((item) => item.captureId === data.captureId);
+      if (!sample) continue;
+      sample.response = data.response;
+      recompute();
+      await saveState();
+      render();
+      break;
+    }
+  }
+
+  async function reset() {
+    state = { samples: { chat: [], work: [] }, comparison: null };
     captureMode = null;
+    post('CW_CAPTURE_MODE', { mode: null });
     await saveState();
-    post('CW_DISABLE');
     render();
-    setStatus('학습 데이터를 초기화했습니다.', 'info');
+    setStatus('캡처 데이터를 초기화했습니다.', 'info');
   }
 
   function diagnosticText() {
     return JSON.stringify({
-      version: 1,
-      conversationDetected: Boolean(currentConversationId),
-      samples: { chat: state.samples.chat.length, work: state.samples.work.length },
-      profiles: state.profiles ? {
-        discriminatorCount: state.profiles.discriminatorCount,
-        endpointDiffers: state.profiles.endpointDiffers,
-        confidence: state.profiles.confidence,
-        chatEndpoint: state.profiles.chat.endpoint,
-        workEndpoint: state.profiles.work.endpoint,
-        chatOps: state.profiles.chat.ops,
-        workOps: state.profiles.work.ops
-      } : null
+      probeVersion: '0.0.1',
+      readOnly: true,
+      page: {
+        routeKind: location.pathname.includes('/c/') ? (location.pathname.includes('/g/') ? 'project-conversation' : 'conversation') : 'non-conversation'
+      },
+      sampleCounts: { chat: state.samples.chat.length, work: state.samples.work.length },
+      comparison: state.comparison,
+      samples: state.samples
     }, null, 2);
-  }
-
-  function setStatus(text, kind = 'info') {
-    if (!ui.status) return;
-    ui.status.textContent = text;
-    ui.status.dataset.kind = kind;
   }
 
   function render() {
     if (!ui.host) return;
-    currentConversationId = conversationIdFromUrl();
-    const profileReady = ready();
-    const selected = currentConversationId ? state.modeByConversation[currentConversationId] : null;
-
-    ui.chat.disabled = !currentConversationId || !profileReady;
-    ui.work.disabled = !currentConversationId || !profileReady;
-    ui.chat.dataset.active = selected === 'chat' ? 'true' : 'false';
-    ui.work.dataset.active = selected === 'work' ? 'true' : 'false';
     ui.captureChat.dataset.active = captureMode === 'chat' ? 'true' : 'false';
     ui.captureWork.dataset.active = captureMode === 'work' ? 'true' : 'false';
-    ui.captureChat.textContent = `Chat 캡처 (${state.samples.chat.length})`;
-    ui.captureWork.textContent = `Work 캡처 (${state.samples.work.length})`;
-    ui.conv.textContent = currentConversationId ? `대화 ${currentConversationId.slice(0, 8)}…` : '대화 화면이 아닙니다';
-    ui.readiness.textContent = state.profiles
-      ? state.profiles.endpointDiffers
-        ? 'endpoint 차이 감지 — 안전 중지'
-        : state.profiles.discriminatorCount > 0
-          ? `모드 차이 ${state.profiles.discriminatorCount}개 · ${state.profiles.confidence === 'high' ? '고신뢰' : '임시'}`
-          : '모드 차이를 찾지 못함'
-      : 'Chat/Work를 각각 1회 캡처하세요';
+    ui.captureChat.textContent = `Chat 기록 ${state.samples.chat.length}`;
+    ui.captureWork.textContent = `Work 기록 ${state.samples.work.length}`;
+    ui.readiness.textContent = state.comparison
+      ? `${state.comparison.endpointDiffers ? 'endpoint 다름' : 'endpoint 동일'} · 차이 ${state.comparison.discriminatorCount}개 · ${state.comparison.confidence === 'high' ? '고신뢰' : '임시'}`
+      : 'Chat/Work를 각각 1회 기록하세요';
+    if (!ui.diag.hidden) ui.diag.value = diagnosticText();
   }
 
   function mount() {
@@ -165,59 +114,48 @@
     host.id = 'cw-switcher-root';
     host.innerHTML = `
       <div class="cw-bar">
-        <button class="cw-mode" data-role="chat">Chat</button>
-        <button class="cw-mode" data-role="work">Work</button>
+        <button data-role="capture-chat">Chat 기록 0</button>
+        <button data-role="capture-work">Work 기록 0</button>
         <button class="cw-gear" data-role="gear" title="설정">⚙</button>
       </div>
       <section class="cw-panel" data-role="panel" hidden>
-        <div class="cw-title">Chat ↔ Work Switcher <span>v0.1.0</span></div>
-        <div class="cw-conv" data-role="conv"></div>
+        <div class="cw-title">Chat ↔ Work Probe <span>v0.0.1 · READ ONLY</span></div>
         <div class="cw-readiness" data-role="readiness"></div>
-        <p class="cw-help">기존 native Chat 대화에서 Chat 캡처를 누르고 메시지 1회를 보내세요. native Work 대화에서도 같은 방식으로 1회 캡처하면 현재 conversation에 적용할 차이만 학습합니다. 메시지 본문·ID·토큰은 저장하지 않습니다.</p>
-        <div class="cw-captures">
-          <button data-role="capture-chat">Chat 캡처 (0)</button>
-          <button data-role="capture-work">Work 캡처 (0)</button>
-        </div>
+        <p class="cw-help">이 빌드는 전환 요청을 만들지 않습니다. native Chat과 native Work에서 각각 한 번씩 메시지 전송 요청을 관찰해 endpoint와 민감정보가 제거된 제어 필드 차이만 기록합니다.</p>
+        <p class="cw-help">프롬프트, 메시지 배열, conversation/message ID, 토큰, 쿠키, 인증정보, 첨부파일은 저장하지 않습니다.</p>
         <div class="cw-actions">
           <button data-role="diagnostics">진단 보기</button>
-          <button data-role="reset">학습 초기화</button>
+          <button data-role="reset">기록 초기화</button>
         </div>
         <textarea class="cw-diagnostics" data-role="diag" readonly hidden></textarea>
       </section>
-      <div class="cw-status" data-role="status" data-kind="info">확장 프로그램 준비됨</div>
+      <div class="cw-status" data-role="status" data-kind="info">읽기 전용 프로브 준비됨</div>
     `;
     document.documentElement.appendChild(host);
 
     ui = {
       host,
-      chat: host.querySelector('[data-role="chat"]'),
-      work: host.querySelector('[data-role="work"]'),
-      gear: host.querySelector('[data-role="gear"]'),
-      panel: host.querySelector('[data-role="panel"]'),
-      conv: host.querySelector('[data-role="conv"]'),
-      readiness: host.querySelector('[data-role="readiness"]'),
       captureChat: host.querySelector('[data-role="capture-chat"]'),
       captureWork: host.querySelector('[data-role="capture-work"]'),
+      gear: host.querySelector('[data-role="gear"]'),
+      panel: host.querySelector('[data-role="panel"]'),
+      readiness: host.querySelector('[data-role="readiness"]'),
       diagnostics: host.querySelector('[data-role="diagnostics"]'),
       reset: host.querySelector('[data-role="reset"]'),
       diag: host.querySelector('[data-role="diag"]'),
       status: host.querySelector('[data-role="status"]')
     };
 
-    ui.chat.addEventListener('click', () => selectMode('chat'));
-    ui.work.addEventListener('click', () => selectMode('work'));
-    ui.gear.addEventListener('click', () => { ui.panel.hidden = !ui.panel.hidden; });
     ui.captureChat.addEventListener('click', () => setCapture('chat'));
     ui.captureWork.addEventListener('click', () => setCapture('work'));
-    ui.reset.addEventListener('click', resetProfiles);
+    ui.gear.addEventListener('click', () => { ui.panel.hidden = !ui.panel.hidden; });
+    ui.reset.addEventListener('click', reset);
     ui.diagnostics.addEventListener('click', () => {
       ui.diag.hidden = !ui.diag.hidden;
       ui.diag.value = diagnosticText();
       if (!ui.diag.hidden) ui.diag.select();
     });
-
     render();
-    configureCurrentConversation();
   }
 
   window.addEventListener('message', (event) => {
@@ -225,29 +163,12 @@
     const data = event.data;
     if (!data || data.channel !== CHANNEL || data.direction !== 'bridge-to-extension') return;
     if (data.type === 'CW_CAPTURED') acceptSample(data.mode, data.sample);
-    if (data.type === 'CW_APPLIED') setStatus(`${data.mode === 'chat' ? 'Chat' : 'Work'} 모드 차이 ${data.operationCount}개 적용`, 'ok');
-    if (data.type === 'CW_ROLLBACK') {
-      if (data.conversationId) delete state.modeByConversation[data.conversationId];
-      saveState();
-      render();
-      setStatus(`서버 오류(${data.status ?? 'network'})로 변환을 자동 해제했습니다. 원본 동작으로 되돌아갑니다.`, 'error');
-    }
-    if (data.type === 'CW_INVARIANT_REJECTED') setStatus('conversation ID 불변조건이 맞지 않아 요청 변환을 차단했습니다.', 'error');
+    if (data.type === 'CW_CAPTURE_RESPONSE') attachResponse(data);
   });
-
-  let lastHref = location.href;
-  setInterval(() => {
-    if (location.href === lastHref) return;
-    lastHref = location.href;
-    configureCurrentConversation();
-  }, 500);
 
   (async () => {
     await loadState();
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', mount, { once: true });
-    } else {
-      mount();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+    else mount();
   })();
 })();
