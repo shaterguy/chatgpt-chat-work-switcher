@@ -57,6 +57,11 @@
     return filtered;
   }
 
+  function withoutSelectableFields(ops) {
+    const excluded = new Set([pathKey(['model']), pathKey(['thinking_effort'])]);
+    return (ops || []).filter((op) => !excluded.has(pathKey(op.path))).map((op) => ({ ...op, path: [...op.path] }));
+  }
+
   function defaultValue(ops, path) {
     const key = pathKey(path);
     const op = (ops || []).find((item) => item.op === 'set' && pathKey(item.path) === key);
@@ -85,7 +90,8 @@
     const otherMode = mode === 'chat' ? 'work' : 'chat';
     const source = comparison[otherMode];
     const baseTargetOps = mode === 'chat' ? target.differencesFromWork : target.differencesFromChat;
-    const sourceOps = otherMode === 'chat' ? source.differencesFromWork : source.differencesFromChat;
+    const rawSourceOps = otherMode === 'chat' ? source.differencesFromWork : source.differencesFromChat;
+    const sourceOps = withoutSelectableFields(rawSourceOps);
     const endpoint = target.endpoint || source.endpoint;
 
     let targetOps = withOverride(baseTargetOps, ['model'], options.model);
