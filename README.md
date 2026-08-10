@@ -1,4 +1,4 @@
-# ChatGPT Chat ↔ Work Switcher — Read-only Probe v0.0.1
+# ChatGPT Chat ↔ Work Switcher — Read-only Probe v0.0.2
 
 Phase 0–1 research build for finding the **real** request-level difference between native Chat and native Work before implementing any same-conversation request mutation.
 
@@ -20,21 +20,24 @@ No captured data leaves Chrome extension local storage automatically.
 
 ## Install
 
-1. Download and unzip `chatgpt-chat-work-switcher-probe-v0.0.1.zip`.
+1. Download and unzip `chatgpt-chat-work-switcher-probe-v0.0.2.zip`.
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select the unzipped folder containing `manifest.json`.
-5. Refresh `https://chatgpt.com`.
+4. Remove the older probe build if it is already installed.
+5. Choose **Load unpacked** and select the unzipped folder containing `manifest.json`.
+6. Refresh the already-open `https://chatgpt.com` tab once.
 
 ## Capture procedure
 
 1. Open a conversation that is natively running as **Chat**.
-2. Click **Chat 기록**, then send one harmless message.
-3. Open a conversation that is natively running as **Work**.
-4. Click **Work 기록**, then send one harmless message.
-5. Open ⚙ → **진단 보기**.
-6. Copy the diagnostic JSON back into the development conversation for analysis.
+2. Click the extension toolbar icon. A popup must open with `Chat 기록`, `Work 기록`, `진단 보기`, and `기록 초기화` controls.
+3. Click **Chat 기록**, then send one harmless message in the ChatGPT page.
+4. Open a conversation that is natively running as **Work**.
+5. Click the extension toolbar icon → **Work 기록**, then send one harmless message.
+6. Click the extension toolbar icon → **진단 보기** and copy the diagnostic JSON back into the development conversation for analysis.
 7. For stronger evidence, repeat one additional capture in each mode; the comparison becomes `high` confidence when each mode has at least two samples and its candidate fields are stable.
+
+If the popup says the probe is not loaded, refresh the ChatGPT tab once. If the current tab is not `https://chatgpt.com`, the popup reports that explicitly instead of appearing to do nothing.
 
 ## Why this is read-only
 
