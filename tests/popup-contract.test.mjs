@@ -46,6 +46,8 @@ test('content and MAIN-world bridge share guarded switch protocol', () => {
   }
   assert.match(bridgeScript, /conversation-id-mismatch/);
   assert.match(bridgeScript, /source-profile-mismatch/);
+  assert.match(bridgeScript, /beforeConversationId/);
+  assert.match(bridgeScript, /beforeMessages/);
 });
 
 test('popup explains stale-tab and wrong-tab failures instead of silently failing', () => {
