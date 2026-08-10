@@ -17,7 +17,7 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/profile-core.js", "src/content.js", "src/switch-options.js"],
+      "js": ["src/profile-core.js", "src/content.js", "src/switch-options.js", "src/action-toggle.js"],
       "css": ["src/content.css"],
       "run_at": "document_start"
     }
