@@ -97,7 +97,6 @@
       await currentTab();
       const response = await send('CW_POPUP_GET_STATE');
       if (!response?.ok) throw new Error(response?.error || '상태를 읽지 못했습니다.');
-      renderSnapshot(response.snapshot);
       setEnabled(true);
       renderSnapshot(response.snapshot);
     } catch (error) {
