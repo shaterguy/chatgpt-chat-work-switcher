@@ -52,9 +52,13 @@
     } else if (snapshot.captureMode === 'work') {
       setStatus('Work 기록 대기 중입니다. native Work 대화에서 메시지를 1회 보내세요.', 'ok');
     } else if (snapshot.switchMode === 'chat') {
-      setStatus('Chat 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
+      setStatus(snapshot.switchStatus === 'applied'
+        ? 'Chat 프로필이 최근 전송에 적용되었습니다. 같은 대화에서 계속 Chat 프로필을 유지합니다.'
+        : 'Chat 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
     } else if (snapshot.switchMode === 'work') {
-      setStatus('Work 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
+      setStatus(snapshot.switchStatus === 'applied'
+        ? 'Work 프로필이 최근 전송에 적용되었습니다. 같은 대화에서 계속 Work 프로필을 유지합니다.'
+        : 'Work 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
     } else if (snapshot.comparison?.endpointDiffers) {
       setStatus('Chat/Work endpoint가 달라 직접 전환을 막았습니다.', 'warn');
     } else if (snapshot.switchAvailable) {
