@@ -71,8 +71,8 @@
     return Array.isArray(body.messages) || typeof body.action === 'string' || typeof body.parent_message_id === 'string';
   }
 
-  function createCapture(url, method, body, transport) {
-    if (!captureMode || !candidate(url, method, body)) return null;
+  function createCapture(url, method, body, transport, modeAtSend) {
+    if (!modeAtSend || !candidate(url, method, body)) return null;
     const captureId = ++captureSequence;
     const parsed = new URL(url, location.href);
     const urlConversationId = currentConversationId();
@@ -88,8 +88,8 @@
       leaves: extractLeaves(body),
       response: null
     };
-    emit('CW_CAPTURED', { mode: captureMode, sample });
-    return { captureId, mode: captureMode };
+    emit('CW_CAPTURED', { mode: modeAtSend, sample });
+    return { captureId, mode: modeAtSend };
   }
 
   function emitResponse(capture, responseLike, responseUrl) {
@@ -121,29 +121,45 @@
   });
 
   const originalFetch = window.fetch;
-  window.fetch = async function chatWorkSwitcherProbeFetch(input, init) {
+  window.fetch = function chatWorkSwitcherProbeFetch(input, init) {
+    const modeAtSend = captureMode;
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
     const method = init?.method || input?.method || 'GET';
-    let bodyText = init?.body;
-    let parsedBody = null;
-    try {
-      if (typeof bodyText !== 'string' && input instanceof Request && !init?.body) bodyText = await input.clone().text();
-      if (typeof bodyText === 'string' && bodyText.trim().startsWith('{')) parsedBody = JSON.parse(bodyText);
-    } catch {}
 
-    const capture = parsedBody ? createCapture(url, method, parsedBody, 'fetch') : null;
+    // Start the native request first and return its original Promise unchanged.
+    // Observation is deliberately kept off the request's critical path.
+    const nativePromise = originalFetch.call(this, input, init);
+
+    let capturePromise = Promise.resolve(null);
     try {
-      const response = await originalFetch.call(this, input, init);
-      emitResponse(capture, response, response.url || url);
-      return response;
-    } catch (error) {
-      if (capture) emit('CW_CAPTURE_RESPONSE', {
-        captureId: capture.captureId,
-        mode: capture.mode,
-        response: { ok: false, status: null, pathname: null, contentType: null, networkError: true }
-      });
-      throw error;
+      if (typeof init?.body === 'string' && init.body.trim().startsWith('{')) {
+        const parsedBody = JSON.parse(init.body);
+        capturePromise = Promise.resolve(createCapture(url, method, parsedBody, 'fetch', modeAtSend));
+      } else if (input instanceof Request && !init?.body && modeAtSend) {
+        capturePromise = input.clone().text()
+          .then((bodyText) => {
+            if (!bodyText.trim().startsWith('{')) return null;
+            return createCapture(url, method, JSON.parse(bodyText), 'fetch', modeAtSend);
+          })
+          .catch(() => null);
+      }
+    } catch {
+      capturePromise = Promise.resolve(null);
     }
+
+    nativePromise.then(
+      (response) => capturePromise.then((capture) => emitResponse(capture, response, response.url || url)),
+      () => capturePromise.then((capture) => {
+        if (!capture) return;
+        emit('CW_CAPTURE_RESPONSE', {
+          captureId: capture.captureId,
+          mode: capture.mode,
+          response: { ok: false, status: null, pathname: null, contentType: null, networkError: true }
+        });
+      })
+    );
+
+    return nativePromise;
   };
 
   const xhrMeta = new WeakMap();
@@ -155,11 +171,14 @@
   };
   XMLHttpRequest.prototype.send = function(body) {
     const meta = xhrMeta.get(this);
-    let parsedBody = null;
+    const modeAtSend = captureMode;
+    let capture = null;
     try {
-      if (typeof body === 'string' && body.trim().startsWith('{')) parsedBody = JSON.parse(body);
+      if (meta && typeof body === 'string' && body.trim().startsWith('{')) {
+        capture = createCapture(meta.url, meta.method, JSON.parse(body), 'xhr', modeAtSend);
+      }
     } catch {}
-    const capture = meta && parsedBody ? createCapture(meta.url, meta.method, parsedBody, 'xhr') : null;
+
     if (capture) {
       this.addEventListener('loadend', () => {
         emit('CW_CAPTURE_RESPONSE', {
@@ -174,6 +193,7 @@
         });
       }, { once: true });
     }
+
     return originalSend.call(this, body);
   };
 
