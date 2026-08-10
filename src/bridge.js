@@ -2,7 +2,8 @@
   'use strict';
 
   const CHANNEL = 'chat-work-switcher-probe-v1';
-  if (globalThis.__chatWorkSwitcherProbeInstalled) return;
+  const core = globalThis.ChatWorkProfileCore;
+  if (!core || globalThis.__chatWorkSwitcherProbeInstalled) return;
   globalThis.__chatWorkSwitcherProbeInstalled = true;
 
   const blockedKeys = new Set([
@@ -18,6 +19,7 @@
 
   let captureMode = null;
   let captureSequence = 0;
+  let activeSwitch = null;
 
   function emit(type, payload = {}) {
     window.postMessage({ channel: CHANNEL, direction: 'bridge-to-extension', type, ...payload }, '*');
@@ -71,6 +73,10 @@
     return Array.isArray(body.messages) || typeof body.action === 'string' || typeof body.parent_message_id === 'string';
   }
 
+  function pathnameOf(url) {
+    try { return new URL(url, location.href).pathname; } catch { return null; }
+  }
+
   function createCapture(url, method, body, transport, modeAtSend) {
     if (!modeAtSend || !candidate(url, method, body)) return null;
     const captureId = ++captureSequence;
@@ -94,8 +100,6 @@
 
   function emitResponse(capture, responseLike, responseUrl) {
     if (!capture) return;
-    let pathname = null;
-    try { pathname = new URL(responseUrl || location.href, location.href).pathname; } catch {}
     let contentType = null;
     try { contentType = responseLike?.headers?.get?.('content-type') || null; } catch {}
     emit('CW_CAPTURE_RESPONSE', {
@@ -104,62 +108,181 @@
       response: {
         ok: typeof responseLike?.ok === 'boolean' ? responseLike.ok : null,
         status: Number.isFinite(responseLike?.status) ? responseLike.status : null,
-        pathname,
+        pathname: pathnameOf(responseUrl || location.href),
         contentType: typeof contentType === 'string' ? contentType.slice(0, 80) : null
       }
     });
+  }
+
+  function disableSwitch(reason, details = {}) {
+    if (!activeSwitch) return;
+    const previous = activeSwitch;
+    activeSwitch = null;
+    emit('CW_SWITCH_DISABLED', {
+      reason,
+      mode: previous.mode,
+      conversationIdMatches: currentConversationId() === previous.conversationId,
+      ...details
+    });
+  }
+
+  function transformCandidate(url, method, body) {
+    if (!activeSwitch || !candidate(url, method, body)) return { body, applied: 0, transformed: false };
+
+    const currentId = currentConversationId();
+    if (!currentId || currentId !== activeSwitch.conversationId) {
+      disableSwitch('conversation-changed');
+      return { body, applied: 0, transformed: false };
+    }
+
+    const pathname = pathnameOf(url);
+    if (!pathname || pathname !== activeSwitch.endpoint) {
+      emit('CW_SWITCH_BYPASS', { reason: 'endpoint-mismatch', pathname, expectedPathname: activeSwitch.endpoint });
+      return { body, applied: 0, transformed: false };
+    }
+
+    const bodyConversationId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
+    if (bodyConversationId && bodyConversationId !== currentId) {
+      disableSwitch('conversation-id-mismatch');
+      return { body, applied: 0, transformed: false };
+    }
+
+    if (core.matchesOps(body, activeSwitch.targetOps)) {
+      return { body, applied: 0, transformed: false, alreadyTarget: true };
+    }
+
+    if (!core.matchesOps(body, activeSwitch.sourceOps)) {
+      emit('CW_SWITCH_BYPASS', { reason: 'source-profile-mismatch', pathname });
+      return { body, applied: 0, transformed: false };
+    }
+
+    const beforeConversationId = body.conversation_id;
+    const beforeMessages = body.messages;
+    const result = core.applyOps(body, activeSwitch.targetOps);
+    const next = result.value;
+
+    if (beforeConversationId !== undefined) next.conversation_id = beforeConversationId;
+    if (beforeMessages !== undefined) next.messages = beforeMessages;
+
+    emit('CW_SWITCH_APPLIED', {
+      mode: activeSwitch.mode,
+      pathname,
+      operationCount: result.applied,
+      protectedConversationId: beforeConversationId !== undefined,
+      protectedMessages: beforeMessages !== undefined
+    });
+
+    return { body: next, applied: result.applied, transformed: result.applied > 0 };
+  }
+
+  function monitorTransformedPromise(promise, meta, capture, url) {
+    promise.then(
+      (response) => {
+        emitResponse(capture, response, response.url || url);
+        if (meta?.transformed && response && response.ok === false) {
+          disableSwitch('http-failure', { status: response.status });
+        }
+      },
+      () => {
+        if (capture) emit('CW_CAPTURE_RESPONSE', {
+          captureId: capture.captureId,
+          mode: capture.mode,
+          response: { ok: false, status: null, pathname: null, contentType: null, networkError: true }
+        });
+        if (meta?.transformed) disableSwitch('network-failure');
+      }
+    );
+    return promise;
   }
 
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
     if (!data || data.channel !== CHANNEL || data.direction !== 'extension-to-bridge') return;
+
     if (data.type === 'CW_CAPTURE_MODE') {
       captureMode = data.mode === 'chat' || data.mode === 'work' ? data.mode : null;
+      if (captureMode) activeSwitch = null;
       emit('CW_CAPTURE_STATE', { mode: captureMode });
+      return;
+    }
+
+    if (data.type === 'CW_SWITCH_CONFIG') {
+      const conversationId = currentConversationId();
+      const validMode = data.mode === 'chat' || data.mode === 'work';
+      const validOps = Array.isArray(data.sourceOps) && Array.isArray(data.targetOps);
+      if (!conversationId || data.conversationId !== conversationId || !validMode || !validOps || !data.endpoint) {
+        activeSwitch = null;
+        emit('CW_SWITCH_REJECTED', { reason: 'invalid-config' });
+        return;
+      }
+      captureMode = null;
+      activeSwitch = {
+        conversationId,
+        mode: data.mode,
+        endpoint: data.endpoint,
+        sourceOps: data.sourceOps,
+        targetOps: data.targetOps
+      };
+      emit('CW_SWITCH_READY', {
+        mode: activeSwitch.mode,
+        endpoint: activeSwitch.endpoint,
+        sourceOperationCount: activeSwitch.sourceOps.length,
+        targetOperationCount: activeSwitch.targetOps.length
+      });
+      return;
+    }
+
+    if (data.type === 'CW_SWITCH_DISABLE') {
+      disableSwitch(data.reason || 'user-disabled');
     }
   });
 
   const originalFetch = window.fetch;
-  window.fetch = function chatWorkSwitcherProbeFetch(input, init) {
+  window.fetch = function chatWorkSwitcherFetch(input, init) {
     const modeAtSend = captureMode;
+    const shouldInspect = Boolean(modeAtSend || activeSwitch);
+    if (!shouldInspect) return originalFetch.call(this, input, init);
+
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
     const method = init?.method || input?.method || 'GET';
 
-    // Start the native request first and return its original Promise unchanged.
-    // Observation is deliberately kept off the request's critical path.
-    const nativePromise = originalFetch.call(this, input, init);
+    const runWithBody = (bodyText) => {
+      let parsedBody = null;
+      try {
+        if (typeof bodyText === 'string' && bodyText.trim().startsWith('{')) parsedBody = JSON.parse(bodyText);
+      } catch {}
 
-    let capturePromise = Promise.resolve(null);
-    try {
-      if (typeof init?.body === 'string' && init.body.trim().startsWith('{')) {
-        const parsedBody = JSON.parse(init.body);
-        capturePromise = Promise.resolve(createCapture(url, method, parsedBody, 'fetch', modeAtSend));
-      } else if (input instanceof Request && !init?.body && modeAtSend) {
-        capturePromise = input.clone().text()
-          .then((bodyText) => {
-            if (!bodyText.trim().startsWith('{')) return null;
-            return createCapture(url, method, JSON.parse(bodyText), 'fetch', modeAtSend);
-          })
-          .catch(() => null);
+      const capture = parsedBody ? createCapture(url, method, parsedBody, 'fetch', modeAtSend) : null;
+      const transformed = parsedBody ? transformCandidate(url, method, parsedBody) : { body: parsedBody, applied: 0, transformed: false };
+      const nextBody = transformed.transformed ? JSON.stringify(transformed.body) : bodyText;
+
+      let promise;
+      try {
+        if (input instanceof Request) {
+          const request = transformed.transformed ? new Request(input, { ...init, body: nextBody }) : input;
+          promise = originalFetch.call(this, request, transformed.transformed ? undefined : init);
+        } else {
+          const nextInit = transformed.transformed ? { ...(init || {}), body: nextBody } : init;
+          promise = originalFetch.call(this, input, nextInit);
+        }
+      } catch (error) {
+        if (transformed.transformed) disableSwitch('request-rebuild-failure');
+        throw error;
       }
-    } catch {
-      capturePromise = Promise.resolve(null);
+
+      return monitorTransformedPromise(promise, transformed, capture, url);
+    };
+
+    if (typeof init?.body === 'string') return runWithBody(init.body);
+
+    if (input instanceof Request && !init?.body) {
+      return input.clone().text()
+        .then(runWithBody)
+        .catch(() => originalFetch.call(this, input, init));
     }
 
-    nativePromise.then(
-      (response) => capturePromise.then((capture) => emitResponse(capture, response, response.url || url)),
-      () => capturePromise.then((capture) => {
-        if (!capture) return;
-        emit('CW_CAPTURE_RESPONSE', {
-          captureId: capture.captureId,
-          mode: capture.mode,
-          response: { ok: false, status: null, pathname: null, contentType: null, networkError: true }
-        });
-      })
-    );
-
-    return nativePromise;
+    return originalFetch.call(this, input, init);
   };
 
   const xhrMeta = new WeakMap();
@@ -172,15 +295,17 @@
   XMLHttpRequest.prototype.send = function(body) {
     const meta = xhrMeta.get(this);
     const modeAtSend = captureMode;
-    let capture = null;
+    let parsedBody = null;
     try {
-      if (meta && typeof body === 'string' && body.trim().startsWith('{')) {
-        capture = createCapture(meta.url, meta.method, JSON.parse(body), 'xhr', modeAtSend);
-      }
+      if (meta && typeof body === 'string' && body.trim().startsWith('{')) parsedBody = JSON.parse(body);
     } catch {}
 
-    if (capture) {
-      this.addEventListener('loadend', () => {
+    const capture = meta && parsedBody ? createCapture(meta.url, meta.method, parsedBody, 'xhr', modeAtSend) : null;
+    const transformed = meta && parsedBody ? transformCandidate(meta.url, meta.method, parsedBody) : { body: parsedBody, applied: 0, transformed: false };
+    const nextBody = transformed.transformed ? JSON.stringify(transformed.body) : body;
+
+    this.addEventListener('loadend', () => {
+      if (capture) {
         emit('CW_CAPTURE_RESPONSE', {
           captureId: capture.captureId,
           mode: capture.mode,
@@ -191,11 +316,14 @@
             contentType: (this.getResponseHeader('content-type') || '').slice(0, 80) || null
           }
         });
-      }, { once: true });
-    }
+      }
+      if (transformed.transformed && !(this.status >= 200 && this.status < 400)) {
+        disableSwitch('http-failure', { status: Number.isFinite(this.status) ? this.status : null });
+      }
+    }, { once: true });
 
-    return originalSend.call(this, body);
+    return originalSend.call(this, nextBody);
   };
 
-  emit('CW_BRIDGE_READY', { readOnly: true });
+  emit('CW_BRIDGE_READY', { readOnly: false, experimentalSwitching: true });
 })();
