@@ -36,6 +36,7 @@ The supplied v0.0.2 diagnostic had `comparison: null` despite containing one Cha
 - Never creates a new conversation and never hands off/copies messages.
 - Keeps the selected target mode armed for later matching submissions in that same conversation.
 - Automatically disables switching after HTTP/network failure or when the conversation changes.
+- Does not retry or resend a failed transformed message automatically.
 
 ## Important limitation
 
