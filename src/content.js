@@ -65,7 +65,8 @@
   }
 
   function recompute() {
-    const captured = core.buildComparison(state.samples.chat, state.samples.work);
+    const hasBoth = state.samples.chat.length > 0 && state.samples.work.length > 0;
+    const captured = hasBoth ? core.buildComparison(state.samples.chat, state.samples.work) : null;
     state.comparison = captured || SEEDED_COMPARISON;
     comparisonSource = captured ? 'captured' : 'seeded';
   }
