@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Chat ↔ Work Switcher Preview",
-  "version": "0.1.1",
-  "description": "Experimental same-conversation Chat/Work switcher with selectable model/reasoning and automatic layout reload.",
-  "permissions": ["storage", "activeTab"],
+  "version": "0.1.2",
+  "description": "Experimental same-conversation Chat/Work switcher with selectable model/reasoning and reliable toolbar controls.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://chatgpt.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
@@ -19,7 +23,6 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Chat ↔ Work Switcher Preview",
-    "default_popup": "popup.html"
+    "default_title": "ChatGPT Chat ↔ Work Switcher Preview"
   }
 }
