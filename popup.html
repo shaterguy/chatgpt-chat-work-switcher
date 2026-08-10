@@ -3,24 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chat ↔ Work Probe</title>
+  <title>Chat ↔ Work Switcher</title>
   <link rel="stylesheet" href="src/popup.css">
 </head>
 <body>
   <main class="popup-shell">
     <header>
-      <h1>Chat ↔ Work Probe</h1>
-      <span class="badge">v0.0.2 · READ ONLY</span>
+      <h1>Chat ↔ Work Switcher</h1>
+      <span class="badge">v0.1.0 · PREVIEW</span>
     </header>
 
     <p class="status" data-role="status">현재 ChatGPT 탭을 확인하는 중입니다…</p>
 
-    <section class="actions" aria-label="capture controls">
-      <button data-action="chat">Chat 기록 <span data-role="chat-count">0</span></button>
-      <button data-action="work">Work 기록 <span data-role="work-count">0</span></button>
+    <section class="switch-actions" aria-label="mode switch controls">
+      <button data-action="switch-chat">Chat로 전환</button>
+      <button data-action="switch-work">Work로 전환</button>
     </section>
+    <button class="secondary full" data-action="disable-switch">전환 해제</button>
 
-    <p class="hint">원하는 모드의 기록 버튼을 누른 뒤, 현재 ChatGPT 대화에서 메시지를 한 번 보내면 됩니다.</p>
+    <p class="hint">전환 버튼을 누른 뒤 같은 대화에서 다음 메시지를 보내면, conversation ID와 message tree는 그대로 유지하고 확인된 모드 제어 필드만 바꿉니다.</p>
+
+    <details>
+      <summary>프로필 다시 기록</summary>
+      <section class="actions" aria-label="capture controls">
+        <button class="secondary" data-action="capture-chat">Chat 기록 <span data-role="chat-count">0</span></button>
+        <button class="secondary" data-action="capture-work">Work 기록 <span data-role="work-count">0</span></button>
+      </section>
+      <p class="hint">새 ChatGPT 웹 버전에서 모드 값이 바뀌면 native Chat/Work를 각각 기록해 현재 PC의 프로필로 갱신할 수 있습니다.</p>
+    </details>
 
     <section class="secondary-actions">
       <button class="secondary" data-action="diagnostics">진단 보기</button>
@@ -29,7 +39,7 @@
 
     <section class="diagnostics" data-role="diagnostics-panel" hidden>
       <textarea data-role="diagnostics-text" readonly spellcheck="false"></textarea>
-      <button class="secondary" data-action="copy">진단 복사</button>
+      <button class="secondary full" data-action="copy">진단 복사</button>
     </section>
   </main>
   <script src="src/popup.js"></script>
