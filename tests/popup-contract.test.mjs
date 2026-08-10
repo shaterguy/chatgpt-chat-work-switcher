@@ -9,16 +9,32 @@ const contentScript = fs.readFileSync(new URL('../src/content.js', import.meta.u
 const bridgeScript = fs.readFileSync(new URL('../src/bridge.js', import.meta.url), 'utf8');
 const optionsScript = fs.readFileSync(new URL('../src/switch-options.js', import.meta.url), 'utf8');
 const streamMonitor = fs.readFileSync(new URL('../src/stream-monitor.js', import.meta.url), 'utf8');
+const backgroundScript = fs.readFileSync(new URL('../src/background.js', import.meta.url), 'utf8');
+const actionToggle = fs.readFileSync(new URL('../src/action-toggle.js', import.meta.url), 'utf8');
 
-test('toolbar action opens the preview popup', () => {
-  assert.equal(manifest.action?.default_popup, 'popup.html');
+test('toolbar action is handled by a service worker instead of a fragile popup', () => {
+  assert.equal(manifest.action?.default_popup, undefined);
+  assert.equal(manifest.background?.service_worker, 'src/background.js');
   assert.ok(manifest.permissions?.includes('activeTab'));
-  assert.equal(manifest.version, '0.1.1');
+  assert.ok(manifest.permissions?.includes('scripting'));
+  assert.ok(manifest.host_permissions?.includes('https://chatgpt.com/*'));
+  assert.equal(manifest.version, '0.1.2');
   assert.ok(manifest.content_scripts[0].js.includes('src/stream-monitor.js'));
   assert.ok(manifest.content_scripts[1].js.includes('src/switch-options.js'));
+  assert.ok(manifest.content_scripts[1].js.includes('src/action-toggle.js'));
 });
 
-test('popup exposes direct switch, model, reasoning and reload controls', () => {
+test('toolbar click toggles the in-page panel and can inject stale tabs', () => {
+  assert.match(backgroundScript, /chrome\.action\.onClicked/);
+  assert.match(backgroundScript, /CW_ACTION_TOGGLE_PANEL/);
+  assert.match(backgroundScript, /chrome\.scripting\.executeScript/);
+  assert.match(backgroundScript, /src\/action-toggle\.js/);
+  assert.match(actionToggle, /CW_ACTION_TOGGLE_PANEL/);
+  assert.match(actionToggle, /controller-panel-not-mounted/);
+  assert.match(actionToggle, /panel\.hidden = !panel\.hidden/);
+});
+
+test('legacy popup still exposes direct switch, model, reasoning and reload controls', () => {
   for (const action of [
     'switch-chat', 'switch-work', 'disable-switch',
     'capture-chat', 'capture-work', 'diagnostics', 'reset'
@@ -28,11 +44,9 @@ test('popup exposes direct switch, model, reasoning and reload controls', () => 
   assert.match(popup, /data-role="model"/);
   assert.match(popup, /data-role="thinking-effort"/);
   assert.match(popup, /data-role="auto-reload"/);
-  assert.match(popup, /Chat로 전환/);
-  assert.match(popup, /Work로 전환/);
 });
 
-test('popup retains the original calibration/runtime contract', () => {
+test('legacy popup retains the original calibration/runtime contract', () => {
   for (const command of [
     'CW_POPUP_GET_STATE',
     'CW_POPUP_SET_CAPTURE',
@@ -75,9 +89,4 @@ test('successful switched response completion can trigger same-route reload', ()
 test('Request-body inspection cannot resend after the native fetch rejects', () => {
   assert.doesNotMatch(bridgeScript, /\.then\(runWithBody\)\s*\.catch/);
   assert.match(bridgeScript, /const clonedText = input\.clone\(\)\.text\(\)\.catch\(\(\) => null\)/);
-});
-
-test('popup explains stale-tab and wrong-tab failures instead of silently failing', () => {
-  assert.match(popupScript, /새로고침한 뒤 다시 눌러주세요/);
-  assert.match(popupScript, /ChatGPT 탭에서 확장프로그램 아이콘을 눌러주세요/);
 });
