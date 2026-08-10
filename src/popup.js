@@ -9,6 +9,9 @@
   const captureWorkButton = document.querySelector('[data-action="capture-work"]');
   const chatCount = document.querySelector('[data-role="chat-count"]');
   const workCount = document.querySelector('[data-role="work-count"]');
+  const modelInput = document.querySelector('[data-role="model"]');
+  const effortInput = document.querySelector('[data-role="thinking-effort"]');
+  const autoReloadInput = document.querySelector('[data-role="auto-reload"]');
   const diagnosticsButton = document.querySelector('[data-action="diagnostics"]');
   const resetButton = document.querySelector('[data-action="reset"]');
   const copyButton = document.querySelector('[data-action="copy"]');
@@ -16,6 +19,7 @@
   const diagnosticsText = document.querySelector('[data-role="diagnostics-text"]');
 
   let activeTabId = null;
+  let defaults = null;
 
   function setStatus(text, kind = 'info') {
     status.textContent = text;
@@ -34,6 +38,9 @@
     ]) {
       button.disabled = !enabled;
     }
+    modelInput.disabled = !enabled;
+    effortInput.disabled = !enabled;
+    autoReloadInput.disabled = !enabled;
   }
 
   function renderSnapshot(snapshot) {
@@ -53,16 +60,16 @@
       setStatus('Work 기록 대기 중입니다. native Work 대화에서 메시지를 1회 보내세요.', 'ok');
     } else if (snapshot.switchMode === 'chat') {
       setStatus(snapshot.switchStatus === 'applied'
-        ? 'Chat 프로필이 최근 전송에 적용되었습니다. 같은 대화에서 계속 Chat 프로필을 유지합니다.'
+        ? 'Chat 요청이 적용되었습니다. 응답이 끝나면 같은 대화를 자동 재로딩합니다.'
         : 'Chat 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
     } else if (snapshot.switchMode === 'work') {
       setStatus(snapshot.switchStatus === 'applied'
-        ? 'Work 프로필이 최근 전송에 적용되었습니다. 같은 대화에서 계속 Work 프로필을 유지합니다.'
+        ? 'Work 요청이 적용되었습니다. 응답이 끝나면 같은 대화를 자동 재로딩합니다.'
         : 'Work 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
     } else if (snapshot.comparison?.endpointDiffers) {
       setStatus('Chat/Work endpoint가 달라 직접 전환을 막았습니다.', 'warn');
     } else if (snapshot.switchAvailable) {
-      setStatus(`전환 가능 · ${snapshot.profileSource === 'captured' ? '내 캡처 프로필' : '기본 관찰 프로필'} · 차이 ${snapshot.comparison?.discriminatorCount || 0}개`, 'ok');
+      setStatus(`전환 가능 · ${snapshot.profileSource === 'captured' ? '내 캡처 프로필' : '기본 관찰 프로필'} · 모델/추론 정도 선택 가능`, 'ok');
     } else {
       setStatus('기존 ChatGPT /c/... 대화에서 사용해 주세요.', 'info');
     }
@@ -78,14 +85,10 @@
     return tab;
   }
 
-  async function send(type, payload = {}) {
+  async function send(type, payload = {}, source = 'chat-work-switcher-popup') {
     if (!activeTabId) await currentTab();
     try {
-      return await chrome.tabs.sendMessage(activeTabId, {
-        source: 'chat-work-switcher-popup',
-        type,
-        ...payload
-      });
+      return await chrome.tabs.sendMessage(activeTabId, { source, type, ...payload });
     } catch (error) {
       const message = String(error?.message || error);
       if (message.includes('Receiving end does not exist') || message.includes('Could not establish connection')) {
@@ -95,12 +98,21 @@
     }
   }
 
+  async function loadDefaults() {
+    const response = await send('CW_OPTIONS_GET_DEFAULTS', {}, 'chat-work-switcher-popup-options');
+    if (!response?.ok) return;
+    defaults = response.defaults;
+    modelInput.title = `Chat 기본: ${defaults.chat?.model || '-'} / Work 기본: ${defaults.work?.model || '-'}`;
+    effortInput.title = `Chat 기본: ${defaults.chat?.thinkingEffort || '-'} / Work 기본: ${defaults.work?.thinkingEffort || '-'}`;
+  }
+
   async function refresh() {
     setEnabled(false);
     try {
       await currentTab();
       const response = await send('CW_POPUP_GET_STATE');
       if (!response?.ok) throw new Error(response?.error || '상태를 읽지 못했습니다.');
+      await loadDefaults();
       setEnabled(true);
       renderSnapshot(response.snapshot);
     } catch (error) {
@@ -111,9 +123,17 @@
 
   async function setSwitch(mode) {
     try {
-      const response = await send('CW_POPUP_SET_SWITCH', { mode });
+      const response = await send('CW_OPTIONS_SET_SWITCH', {
+        mode,
+        model: modelInput.value,
+        thinkingEffort: effortInput.value,
+        autoReload: autoReloadInput.checked
+      }, 'chat-work-switcher-popup-options');
       if (!response?.ok) throw new Error(response?.error || '전환 준비에 실패했습니다.');
-      renderSnapshot(response.snapshot);
+      const modeName = mode === 'chat' ? 'Chat' : 'Work';
+      setStatus(`${modeName} 전환 준비 완료 · 모델 ${response.model || '기본값'} · 추론 ${response.thinkingEffort || '기본값'}${response.autoReload ? ' · 응답 완료 후 자동 재로딩' : ''}`, 'warn');
+      switchChatButton.dataset.active = mode === 'chat' ? 'true' : 'false';
+      switchWorkButton.dataset.active = mode === 'work' ? 'true' : 'false';
     } catch (error) {
       setStatus(error.message || String(error), 'error');
     }
@@ -151,8 +171,10 @@
       if (!response?.ok) throw new Error(response?.error || '초기화에 실패했습니다.');
       diagnosticsPanel.hidden = true;
       diagnosticsText.value = '';
+      modelInput.value = '';
+      effortInput.value = '';
       renderSnapshot(response.snapshot);
-      setStatus('사용자 기록을 초기화했습니다. 기본 관찰 프로필로 돌아갔습니다.', 'ok');
+      setStatus('사용자 기록과 입력 옵션을 초기화했습니다.', 'ok');
     } catch (error) {
       setStatus(error.message || String(error), 'error');
     }
