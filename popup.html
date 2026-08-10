@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat ↔ Work Probe</title>
+  <link rel="stylesheet" href="src/popup.css">
+</head>
+<body>
+  <main class="popup-shell">
+    <header>
+      <h1>Chat ↔ Work Probe</h1>
+      <span class="badge">v0.0.2 · READ ONLY</span>
+    </header>
+
+    <p class="status" data-role="status">현재 ChatGPT 탭을 확인하는 중입니다…</p>
+
+    <section class="actions" aria-label="capture controls">
+      <button data-action="chat">Chat 기록 <span data-role="chat-count">0</span></button>
+      <button data-action="work">Work 기록 <span data-role="work-count">0</span></button>
+    </section>
+
+    <p class="hint">원하는 모드의 기록 버튼을 누른 뒤, 현재 ChatGPT 대화에서 메시지를 한 번 보내면 됩니다.</p>
+
+    <section class="secondary-actions">
+      <button class="secondary" data-action="diagnostics">진단 보기</button>
+      <button class="secondary danger" data-action="reset">기록 초기화</button>
+    </section>
+
+    <section class="diagnostics" data-role="diagnostics-panel" hidden>
+      <textarea data-role="diagnostics-text" readonly spellcheck="false"></textarea>
+      <button class="secondary" data-action="copy">진단 복사</button>
+    </section>
+  </main>
+  <script src="src/popup.js"></script>
+</body>
+</html>
