@@ -24,14 +24,21 @@ test('toolbar action is handled by a service worker instead of a fragile popup',
   assert.ok(manifest.content_scripts[1].js.includes('src/action-toggle.js'));
 });
 
-test('toolbar click toggles the in-page panel and can inject stale tabs', () => {
+test('toolbar click opens a self-contained in-page controller and can inject stale tabs', () => {
   assert.match(backgroundScript, /chrome\.action\.onClicked/);
   assert.match(backgroundScript, /CW_ACTION_TOGGLE_PANEL/);
   assert.match(backgroundScript, /chrome\.scripting\.executeScript/);
   assert.match(backgroundScript, /src\/action-toggle\.js/);
+  assert.match(actionToggle, /attachShadow/);
   assert.match(actionToggle, /CW_ACTION_TOGGLE_PANEL/);
-  assert.match(actionToggle, /controller-panel-not-mounted/);
-  assert.match(actionToggle, /panel\.hidden = !panel\.hidden/);
+  assert.match(actionToggle, /data-role=\"model\"/);
+  assert.match(actionToggle, /data-role=\"effort\"/);
+  assert.match(actionToggle, /data-role=\"reload\"/);
+  assert.match(actionToggle, /Chat로 전환/);
+  assert.match(actionToggle, /Work로 전환/);
+  assert.match(actionToggle, /CW_SWITCH_CONFIG/);
+  assert.match(actionToggle, /CW_SWITCH_RESPONSE_COMPLETE/);
+  assert.match(actionToggle, /location\.reload\(\)/);
 });
 
 test('legacy popup still exposes direct switch, model, reasoning and reload controls', () => {
@@ -84,6 +91,7 @@ test('successful switched response completion can trigger same-route reload', ()
   assert.match(streamMonitor, /response\.clone\(\)/);
   assert.match(optionsScript, /location\.reload\(\)/);
   assert.match(optionsScript, /currentId === pendingReload\.conversationId/);
+  assert.match(actionToggle, /currentId === pendingReload\.conversationId/);
 });
 
 test('Request-body inspection cannot resend after the native fetch rejects', () => {
