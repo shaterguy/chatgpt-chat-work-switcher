@@ -7,29 +7,35 @@ const popup = fs.readFileSync(new URL('../popup.html', import.meta.url), 'utf8')
 const popupScript = fs.readFileSync(new URL('../src/popup.js', import.meta.url), 'utf8');
 const contentScript = fs.readFileSync(new URL('../src/content.js', import.meta.url), 'utf8');
 const bridgeScript = fs.readFileSync(new URL('../src/bridge.js', import.meta.url), 'utf8');
+const optionsScript = fs.readFileSync(new URL('../src/switch-options.js', import.meta.url), 'utf8');
+const streamMonitor = fs.readFileSync(new URL('../src/stream-monitor.js', import.meta.url), 'utf8');
 
 test('toolbar action opens the preview popup', () => {
   assert.equal(manifest.action?.default_popup, 'popup.html');
   assert.ok(manifest.permissions?.includes('activeTab'));
-  assert.equal(manifest.version, '0.1.0');
+  assert.equal(manifest.version, '0.1.1');
+  assert.ok(manifest.content_scripts[0].js.includes('src/stream-monitor.js'));
+  assert.ok(manifest.content_scripts[1].js.includes('src/switch-options.js'));
 });
 
-test('popup exposes direct switch and calibration controls', () => {
+test('popup exposes direct switch, model, reasoning and reload controls', () => {
   for (const action of [
     'switch-chat', 'switch-work', 'disable-switch',
     'capture-chat', 'capture-work', 'diagnostics', 'reset'
   ]) {
     assert.match(popup, new RegExp(`data-action="${action}"`));
   }
+  assert.match(popup, /data-role="model"/);
+  assert.match(popup, /data-role="thinking-effort"/);
+  assert.match(popup, /data-role="auto-reload"/);
   assert.match(popup, /Chat로 전환/);
   assert.match(popup, /Work로 전환/);
 });
 
-test('popup and content script share switch and capture runtime commands', () => {
+test('popup retains the original calibration/runtime contract', () => {
   for (const command of [
     'CW_POPUP_GET_STATE',
     'CW_POPUP_SET_CAPTURE',
-    'CW_POPUP_SET_SWITCH',
     'CW_POPUP_DISABLE_SWITCH',
     'CW_POPUP_GET_DIAGNOSTICS',
     'CW_POPUP_RESET'
@@ -39,15 +45,31 @@ test('popup and content script share switch and capture runtime commands', () =>
   }
 });
 
-test('content and MAIN-world bridge share guarded switch protocol', () => {
+test('selectable switch options use their own message contract', () => {
+  for (const command of ['CW_OPTIONS_GET_DEFAULTS', 'CW_OPTIONS_SET_SWITCH']) {
+    assert.ok(popupScript.includes(command), `${command} missing from popup.js`);
+    assert.ok(optionsScript.includes(command), `${command} missing from switch-options.js`);
+  }
+  assert.match(optionsScript, /\['model'\]/);
+  assert.match(optionsScript, /\['thinking_effort'\]/);
+  assert.match(optionsScript, /withoutSelectableFields/);
+});
+
+test('MAIN-world bridge keeps guarded same-conversation switching', () => {
   for (const command of ['CW_SWITCH_CONFIG', 'CW_SWITCH_DISABLE', 'CW_SWITCH_APPLIED']) {
-    assert.ok(contentScript.includes(command), `${command} missing from content.js`);
     assert.ok(bridgeScript.includes(command), `${command} missing from bridge.js`);
   }
   assert.match(bridgeScript, /conversation-id-mismatch/);
   assert.match(bridgeScript, /source-profile-mismatch/);
   assert.match(bridgeScript, /beforeConversationId/);
   assert.match(bridgeScript, /beforeMessages/);
+});
+
+test('successful switched response completion can trigger same-route reload', () => {
+  assert.match(streamMonitor, /CW_SWITCH_RESPONSE_COMPLETE/);
+  assert.match(streamMonitor, /response\.clone\(\)/);
+  assert.match(optionsScript, /location\.reload\(\)/);
+  assert.match(optionsScript, /currentId === pendingReload\.conversationId/);
 });
 
 test('Request-body inspection cannot resend after the native fetch rejects', () => {
