@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Chat ↔ Work Switcher",
+  "version": "0.1.0",
+  "description": "Adaptive Chat/Work request-mode switcher that preserves the current ChatGPT conversation.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://chatgpt.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["src/profile-core.js", "src/bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["src/profile-core.js", "src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "ChatGPT Chat ↔ Work Switcher"
+  }
+}

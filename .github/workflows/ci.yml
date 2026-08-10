@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'chatgpt/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run check
+      - name: Build loadable extension ZIP
+        run: |
+          mkdir -p dist
+          zip -r dist/chatgpt-chat-work-switcher-v0.1.0.zip manifest.json src README.md LICENSE \
+            -x '*.DS_Store'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-chat-work-switcher-v0.1.0
+          path: dist/chatgpt-chat-work-switcher-v0.1.0.zip
