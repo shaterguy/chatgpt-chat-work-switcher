@@ -50,6 +50,11 @@ test('content and MAIN-world bridge share guarded switch protocol', () => {
   assert.match(bridgeScript, /beforeMessages/);
 });
 
+test('Request-body inspection cannot resend after the native fetch rejects', () => {
+  assert.doesNotMatch(bridgeScript, /\.then\(runWithBody\)\s*\.catch/);
+  assert.match(bridgeScript, /const clonedText = input\.clone\(\)\.text\(\)\.catch\(\(\) => null\)/);
+});
+
 test('popup explains stale-tab and wrong-tab failures instead of silently failing', () => {
   assert.match(popupScript, /새로고침한 뒤 다시 눌러주세요/);
   assert.match(popupScript, /ChatGPT 탭에서 확장프로그램 아이콘을 눌러주세요/);
