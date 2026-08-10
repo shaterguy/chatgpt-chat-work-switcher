@@ -10,12 +10,15 @@ const contentScript = fs.readFileSync(new URL('../src/content.js', import.meta.u
 test('toolbar action opens the popup', () => {
   assert.equal(manifest.action?.default_popup, 'popup.html');
   assert.ok(manifest.permissions?.includes('activeTab'));
+  assert.equal(manifest.version, '0.0.2');
 });
 
 test('popup exposes the required user controls', () => {
   for (const action of ['chat', 'work', 'diagnostics', 'reset']) {
     assert.match(popup, new RegExp(`data-action="${action}"`));
   }
+  assert.match(popup, /Chat 기록/);
+  assert.match(popup, /Work 기록/);
 });
 
 test('popup and content script share the runtime command contract', () => {
@@ -28,4 +31,9 @@ test('popup and content script share the runtime command contract', () => {
     assert.ok(popupScript.includes(command), `${command} missing from popup.js`);
     assert.ok(contentScript.includes(command), `${command} missing from content.js`);
   }
+});
+
+test('popup explains stale-tab and wrong-tab failures instead of silently failing', () => {
+  assert.match(popupScript, /새로고침한 뒤 다시 눌러주세요/);
+  assert.match(popupScript, /ChatGPT 탭에서 확장프로그램 아이콘을 눌러주세요/);
 });
