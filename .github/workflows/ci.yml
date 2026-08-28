@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -25,6 +26,16 @@ jobs:
           zip -r dist/chatgpt-request-snapshot-calibrator-v0.2.0-dev1.zip \
             manifest.json popup.html README.md LICENSE \
             src/snapshot-core.js src/bridge.js src/content.js src/popup.js src/popup.css
+      - name: Verify loadable ZIP structure
+        run: |
+          ZIP=dist/chatgpt-request-snapshot-calibrator-v0.2.0-dev1.zip
+          test "$(unzip -Z1 "$ZIP" | grep -cx 'manifest.json')" -eq 1
+          test "$(unzip -Z1 "$ZIP" | grep -cx 'popup.html')" -eq 1
+          for f in snapshot-core.js bridge.js content.js popup.js popup.css; do
+            test "$(unzip -Z1 "$ZIP" | grep -cx "src/$f")" -eq 1
+          done
+          unzip -p "$ZIP" manifest.json > /tmp/calibrator-manifest.json
+          node -e "const m=require('/tmp/calibrator-manifest.json'); if(m.name!=='ChatGPT Request Snapshot Calibrator'||m.version_name!=='0.2.0-dev1'||m.action?.default_popup!=='popup.html') process.exit(1)"
       - uses: actions/upload-artifact@v4
         with:
           name: chatgpt-request-snapshot-calibrator-v0.2.0-dev1-${{ github.run_attempt }}
