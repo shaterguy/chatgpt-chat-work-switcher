@@ -37,7 +37,9 @@ test('popup exposes scenario generation, next capture and JSON export', () => {
 });
 
 test('CI preserves src paths in the loadable ZIP and uses attempt-specific artifact identity', () => {
-  assert.doesNotMatch(workflow, /zip -j .*src\//);
-  assert.match(workflow, /zip -r .*src\/snapshot-core\.js/);
+  assert.doesNotMatch(workflow, /zip -j[\s\S]*src\//);
+  assert.match(workflow, /zip -r/);
+  assert.match(workflow, /src\/snapshot-core\.js/);
+  assert.match(workflow, /Verify loadable ZIP structure/);
   assert.match(workflow, /github\.run_attempt/);
 });
