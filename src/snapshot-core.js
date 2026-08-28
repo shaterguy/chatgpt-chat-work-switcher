@@ -16,7 +16,10 @@
 
   function shouldSkipKey(key) {
     const lower = String(key).toLowerCase();
-    return BLOCKED_KEYS.has(lower) || BLOCKED_PATTERN.test(lower) || VOLATILE_PATTERN.test(lower);
+    return BLOCKED_KEYS.has(lower)
+      || /_ids?$/.test(lower)
+      || BLOCKED_PATTERN.test(lower)
+      || VOLATILE_PATTERN.test(lower);
   }
 
   function safePrimitive(value) {

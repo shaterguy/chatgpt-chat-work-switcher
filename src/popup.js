@@ -53,20 +53,18 @@
   async function currentTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('활성 탭을 찾지 못했습니다.');
-    if (!String(tab.url || '').startsWith('https://chatgpt.com/')) {
-      throw new Error('ChatGPT 탭에서 확장프로그램을 열어주세요.');
-    }
     activeTabId = tab.id;
-    els.tabStatus.textContent = 'ChatGPT 연결';
     return tab;
   }
 
   async function send(type, payload = {}) {
     if (!activeTabId) await currentTab();
     try {
-      return await chrome.tabs.sendMessage(activeTabId, { source: SOURCE, type, ...payload });
+      const response = await chrome.tabs.sendMessage(activeTabId, { source: SOURCE, type, ...payload });
+      els.tabStatus.textContent = 'ChatGPT 연결';
+      return response;
     } catch (error) {
-      throw new Error('현재 ChatGPT 탭에 캡처 스크립트가 없습니다. 확장프로그램 설치 후 이 탭을 한 번 새로고침해 주세요.');
+      throw new Error('현재 활성 탭에서 캡처 스크립트를 찾지 못했습니다. ChatGPT 탭을 활성화하고, 설치 직후라면 그 탭만 한 번 새로고침해 주세요.');
     }
   }
 

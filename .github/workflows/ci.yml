@@ -22,8 +22,9 @@ jobs:
       - name: Build loadable extension ZIP
         run: |
           mkdir -p dist
-          zip -j dist/chatgpt-request-snapshot-calibrator-v0.2.0-dev1.zip manifest.json popup.html README.md LICENSE
-          zip -j dist/chatgpt-request-snapshot-calibrator-v0.2.0-dev1.zip src/snapshot-core.js src/bridge.js src/content.js src/popup.js src/popup.css
+          zip -r dist/chatgpt-request-snapshot-calibrator-v0.2.0-dev1.zip \
+            manifest.json popup.html README.md LICENSE \
+            src/snapshot-core.js src/bridge.js src/content.js src/popup.js src/popup.css
       - uses: actions/upload-artifact@v4
         with:
           name: chatgpt-request-snapshot-calibrator-v0.2.0-dev1-${{ github.run_attempt }}

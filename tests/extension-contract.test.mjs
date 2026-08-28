@@ -6,6 +6,8 @@ const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 const bridge = fs.readFileSync('src/bridge.js', 'utf8');
 const popup = fs.readFileSync('popup.html', 'utf8');
 const popupScript = fs.readFileSync('src/popup.js', 'utf8');
+const coreScript = fs.readFileSync('src/snapshot-core.js', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
 
 test('extension is a capture-only calibrator injected before page scripts', () => {
   assert.match(manifest.name, /Snapshot Calibrator/);
@@ -30,6 +32,12 @@ test('popup exposes scenario generation, next capture and JSON export', () => {
   assert.match(popup, /다음 미캡처 대기/);
   assert.match(popup, /결과 JSON 복사/);
   assert.match(popupScript, /RS_ARM_SCENARIO/);
-  assert.match(popupScript, /work-followup/);
+  assert.match(coreScript, /work-followup/);
   assert.match(popupScript, /promptTextStored: false/);
+});
+
+test('CI preserves src paths in the loadable ZIP and uses attempt-specific artifact identity', () => {
+  assert.doesNotMatch(workflow, /zip -j .*src\//);
+  assert.match(workflow, /zip -r .*src\/snapshot-core\.js/);
+  assert.match(workflow, /github\.run_attempt/);
 });
