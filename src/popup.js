@@ -1,209 +1,259 @@
 (() => {
   'use strict';
 
-  const status = document.querySelector('[data-role="status"]');
-  const switchChatButton = document.querySelector('[data-action="switch-chat"]');
-  const switchWorkButton = document.querySelector('[data-action="switch-work"]');
-  const disableSwitchButton = document.querySelector('[data-action="disable-switch"]');
-  const captureChatButton = document.querySelector('[data-action="capture-chat"]');
-  const captureWorkButton = document.querySelector('[data-action="capture-work"]');
-  const chatCount = document.querySelector('[data-role="chat-count"]');
-  const workCount = document.querySelector('[data-role="work-count"]');
-  const modelInput = document.querySelector('[data-role="model"]');
-  const effortInput = document.querySelector('[data-role="thinking-effort"]');
-  const autoReloadInput = document.querySelector('[data-role="auto-reload"]');
-  const diagnosticsButton = document.querySelector('[data-action="diagnostics"]');
-  const resetButton = document.querySelector('[data-action="reset"]');
-  const copyButton = document.querySelector('[data-action="copy"]');
-  const diagnosticsPanel = document.querySelector('[data-role="diagnostics-panel"]');
-  const diagnosticsText = document.querySelector('[data-role="diagnostics-text"]');
+  const core = globalThis.ChatGptRequestSnapshotCore;
+  const CONFIG_KEY = 'chatGptRequestSnapshotConfigV1';
+  const CAPTURES_KEY = 'chatGptRequestSnapshotCapturesV1';
+  const SOURCE = 'chatgpt-request-snapshot-popup';
 
+  const els = {
+    chatModels: document.getElementById('chat-models'),
+    chatReasoning: document.getElementById('chat-reasoning'),
+    workModels: document.getElementById('work-models'),
+    workReasoning: document.getElementById('work-reasoning'),
+    generate: document.getElementById('generate'),
+    resetCaptures: document.getElementById('reset-captures'),
+    planSummary: document.getElementById('plan-summary'),
+    scenarioList: document.getElementById('scenario-list'),
+    armNext: document.getElementById('arm-next'),
+    armedStatus: document.getElementById('armed-status'),
+    copyJson: document.getElementById('copy-json'),
+    downloadJson: document.getElementById('download-json'),
+    exportPreview: document.getElementById('export-preview'),
+    status: document.getElementById('status'),
+    tabStatus: document.getElementById('tab-status')
+  };
+
+  let plan = null;
+  let captures = [];
   let activeTabId = null;
-  let defaults = null;
+  let activeScenario = null;
 
   function setStatus(text, kind = 'info') {
-    status.textContent = text;
-    status.dataset.kind = kind;
+    els.status.textContent = text;
+    els.status.dataset.kind = kind;
   }
 
-  function setEnabled(enabled) {
-    for (const button of [
-      switchChatButton,
-      switchWorkButton,
-      disableSwitchButton,
-      captureChatButton,
-      captureWorkButton,
-      diagnosticsButton,
-      resetButton
-    ]) {
-      button.disabled = !enabled;
-    }
-    modelInput.disabled = !enabled;
-    effortInput.disabled = !enabled;
-    autoReloadInput.disabled = !enabled;
+  function configFromInputs() {
+    return {
+      chatModels: core.normalizeList(els.chatModels.value),
+      chatReasoning: core.normalizeList(els.chatReasoning.value),
+      workModels: core.normalizeList(els.workModels.value),
+      workReasoning: core.normalizeList(els.workReasoning.value)
+    };
   }
 
-  function renderSnapshot(snapshot) {
-    if (!snapshot) return;
-    chatCount.textContent = String(snapshot.sampleCounts?.chat ?? 0);
-    workCount.textContent = String(snapshot.sampleCounts?.work ?? 0);
-    switchChatButton.dataset.active = snapshot.switchMode === 'chat' ? 'true' : 'false';
-    switchWorkButton.dataset.active = snapshot.switchMode === 'work' ? 'true' : 'false';
-    captureChatButton.dataset.active = snapshot.captureMode === 'chat' ? 'true' : 'false';
-    captureWorkButton.dataset.active = snapshot.captureMode === 'work' ? 'true' : 'false';
-    switchChatButton.disabled = !snapshot.switchAvailable;
-    switchWorkButton.disabled = !snapshot.switchAvailable;
-
-    if (snapshot.captureMode === 'chat') {
-      setStatus('Chat 기록 대기 중입니다. native Chat 대화에서 메시지를 1회 보내세요.', 'ok');
-    } else if (snapshot.captureMode === 'work') {
-      setStatus('Work 기록 대기 중입니다. native Work 대화에서 메시지를 1회 보내세요.', 'ok');
-    } else if (snapshot.switchMode === 'chat') {
-      setStatus(snapshot.switchStatus === 'applied'
-        ? 'Chat 요청이 적용되었습니다. 응답이 끝나면 같은 대화를 자동 재로딩합니다.'
-        : 'Chat 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
-    } else if (snapshot.switchMode === 'work') {
-      setStatus(snapshot.switchStatus === 'applied'
-        ? 'Work 요청이 적용되었습니다. 응답이 끝나면 같은 대화를 자동 재로딩합니다.'
-        : 'Work 전환 준비됨. 같은 대화에서 다음 메시지를 보내세요.', snapshot.switchStatus === 'applied' ? 'ok' : 'warn');
-    } else if (snapshot.comparison?.endpointDiffers) {
-      setStatus('Chat/Work endpoint가 달라 직접 전환을 막았습니다.', 'warn');
-    } else if (snapshot.switchAvailable) {
-      setStatus(`전환 가능 · ${snapshot.profileSource === 'captured' ? '내 캡처 프로필' : '기본 관찰 프로필'} · 모델/추론 정도 선택 가능`, 'ok');
-    } else {
-      setStatus('기존 ChatGPT /c/... 대화에서 사용해 주세요.', 'info');
-    }
+  function putConfig(config) {
+    els.chatModels.value = (config.chatModels || []).join('\n');
+    els.chatReasoning.value = (config.chatReasoning || []).join('\n');
+    els.workModels.value = (config.workModels || []).join('\n');
+    els.workReasoning.value = (config.workReasoning || []).join('\n');
   }
 
   async function currentTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('활성 탭을 찾지 못했습니다.');
     if (!String(tab.url || '').startsWith('https://chatgpt.com/')) {
-      throw new Error('ChatGPT 탭에서 확장프로그램 아이콘을 눌러주세요.');
+      throw new Error('ChatGPT 탭에서 확장프로그램을 열어주세요.');
     }
     activeTabId = tab.id;
+    els.tabStatus.textContent = 'ChatGPT 연결';
     return tab;
   }
 
-  async function send(type, payload = {}, source = 'chat-work-switcher-popup') {
+  async function send(type, payload = {}) {
     if (!activeTabId) await currentTab();
     try {
-      return await chrome.tabs.sendMessage(activeTabId, { source, type, ...payload });
+      return await chrome.tabs.sendMessage(activeTabId, { source: SOURCE, type, ...payload });
     } catch (error) {
-      const message = String(error?.message || error);
-      if (message.includes('Receiving end does not exist') || message.includes('Could not establish connection')) {
-        throw new Error('ChatGPT 탭에 새 버전이 아직 로드되지 않았습니다. 탭을 새로고침한 뒤 다시 눌러주세요.');
-      }
-      throw error;
+      throw new Error('현재 ChatGPT 탭에 캡처 스크립트가 없습니다. 확장프로그램 설치 후 이 탭을 한 번 새로고침해 주세요.');
     }
   }
 
-  async function loadDefaults() {
-    const response = await send('CW_OPTIONS_GET_DEFAULTS', {}, 'chat-work-switcher-popup-options');
-    if (!response?.ok) return;
-    defaults = response.defaults;
-    modelInput.title = `Chat 기본: ${defaults.chat?.model || '-'} / Work 기본: ${defaults.work?.model || '-'}`;
-    effortInput.title = `Chat 기본: ${defaults.chat?.thinkingEffort || '-'} / Work 기본: ${defaults.work?.thinkingEffort || '-'}`;
+  function captureCounts() {
+    const counts = new Map();
+    for (const capture of captures) counts.set(capture.scenarioId, (counts.get(capture.scenarioId) || 0) + 1);
+    return counts;
   }
 
-  async function refresh() {
-    setEnabled(false);
+  function escapeText(value) {
+    return String(value ?? '');
+  }
+
+  function render() {
+    if (!plan || plan.error) {
+      els.planSummary.textContent = plan?.error || '옵션을 입력해 주세요.';
+      els.scenarioList.replaceChildren();
+      els.armNext.disabled = true;
+      updateExport();
+      return;
+    }
+    const counts = captureCounts();
+    const completedRequired = plan.scenarios.filter((item) => item.required && counts.has(item.id)).length;
+    els.planSummary.textContent = `필수 ${plan.requiredCount}회 · 완료 ${completedRequired}/${plan.requiredCount} · 선택 교차검증 ${plan.optionalCount}회`;
+    els.armNext.disabled = completedRequired >= plan.requiredCount;
+    els.scenarioList.replaceChildren();
+
+    for (const scenario of plan.scenarios) {
+      const count = counts.get(scenario.id) || 0;
+      const card = document.createElement('div');
+      card.className = 'scenario';
+      card.dataset.done = count > 0 ? 'true' : 'false';
+
+      const top = document.createElement('div');
+      top.className = 'scenario-top';
+      const title = document.createElement('div');
+      title.className = 'scenario-title';
+      title.textContent = `${scenario.order}. ${scenario.mode.toUpperCase()} · ${scenario.phase === 'first' ? '첫 턴' : '후속 턴'}`;
+      const tag = document.createElement('span');
+      tag.className = scenario.required ? 'tag' : 'tag optional';
+      tag.textContent = scenario.required ? '필수' : '선택';
+      title.appendChild(tag);
+      if (count) {
+        const done = document.createElement('span');
+        done.className = 'tag done';
+        done.textContent = `캡처 ${count}`;
+        title.appendChild(done);
+      }
+      const button = document.createElement('button');
+      button.textContent = activeScenario?.id === scenario.id ? '대기 중' : '이 시나리오 대기';
+      button.disabled = activeScenario?.id === scenario.id;
+      button.addEventListener('click', () => armScenario(scenario));
+      top.append(title, button);
+
+      const meta = document.createElement('div');
+      meta.className = 'scenario-meta';
+      meta.textContent = `모델: ${escapeText(scenario.model)} · 추론: ${escapeText(scenario.reasoning)}`;
+      const instruction = document.createElement('div');
+      instruction.className = 'scenario-instruction';
+      instruction.textContent = scenario.instruction;
+      card.append(top, meta, instruction);
+      els.scenarioList.appendChild(card);
+    }
+    els.armedStatus.textContent = activeScenario
+      ? `캡처 대기: ${activeScenario.order}. ${activeScenario.mode.toUpperCase()} · ${activeScenario.model} · ${activeScenario.reasoning}`
+      : '대기 중인 시나리오 없음';
+    els.armedStatus.dataset.active = activeScenario ? 'true' : 'false';
+    updateExport();
+  }
+
+  async function armScenario(scenario) {
+    try {
+      const response = await send('RS_ARM_SCENARIO', { scenario });
+      if (!response?.ok) throw new Error(response?.error || '캡처 대기 설정에 실패했습니다.');
+      activeScenario = scenario;
+      render();
+      setStatus('이제 ChatGPT에서 메뉴를 원하는 상태로 맞춘 뒤 프롬프트를 1회 전송하세요. 메뉴 클릭 자체는 기록되지 않습니다.', 'warn');
+    } catch (error) {
+      setStatus(error.message || String(error), 'error');
+    }
+  }
+
+  function nextMissingScenario() {
+    if (!plan?.scenarios) return null;
+    const counts = captureCounts();
+    return plan.scenarios.find((item) => item.required && !counts.has(item.id)) || null;
+  }
+
+  function exportObject() {
+    const analysis = plan && !plan.error ? core.buildAnalysis(plan, captures) : [];
+    return {
+      schema: 'chatgpt-request-snapshot-calibration-v1',
+      extensionVersion: '0.2.0-dev1',
+      exportedAt: new Date().toISOString(),
+      privacy: {
+        promptTextStored: false,
+        messageContentStored: false,
+        attachmentsStored: false,
+        identifiersStored: false,
+        authOrCookieStored: false
+      },
+      plan,
+      captures,
+      comparisons: analysis
+    };
+  }
+
+  function updateExport() {
+    els.exportPreview.value = JSON.stringify(exportObject(), null, 2);
+  }
+
+  async function load() {
     try {
       await currentTab();
-      const response = await send('CW_POPUP_GET_STATE');
-      if (!response?.ok) throw new Error(response?.error || '상태를 읽지 못했습니다.');
-      await loadDefaults();
-      setEnabled(true);
-      renderSnapshot(response.snapshot);
+      const stored = await chrome.storage.local.get([CONFIG_KEY, CAPTURES_KEY]);
+      const config = stored[CONFIG_KEY] || { chatModels: [], chatReasoning: [], workModels: [], workReasoning: [] };
+      captures = Array.isArray(stored[CAPTURES_KEY]) ? stored[CAPTURES_KEY] : [];
+      putConfig(config);
+      plan = core.buildScenarioPlan(config);
+      const tabState = await send('RS_GET_STATE');
+      activeScenario = tabState?.activeScenario || null;
+      render();
+      setStatus(plan.error ? plan.error : '준비되었습니다. 다음 미캡처 시나리오부터 진행하세요.', plan.error ? 'warn' : 'ok');
     } catch (error) {
+      els.tabStatus.textContent = '연결 실패';
       setStatus(error.message || String(error), 'error');
-      setEnabled(false);
+      const stored = await chrome.storage.local.get([CONFIG_KEY, CAPTURES_KEY]);
+      const config = stored[CONFIG_KEY] || { chatModels: [], chatReasoning: [], workModels: [], workReasoning: [] };
+      captures = Array.isArray(stored[CAPTURES_KEY]) ? stored[CAPTURES_KEY] : [];
+      putConfig(config);
+      plan = core.buildScenarioPlan(config);
+      render();
     }
   }
 
-  async function setSwitch(mode) {
-    try {
-      const response = await send('CW_OPTIONS_SET_SWITCH', {
-        mode,
-        model: modelInput.value,
-        thinkingEffort: effortInput.value,
-        autoReload: autoReloadInput.checked
-      }, 'chat-work-switcher-popup-options');
-      if (!response?.ok) throw new Error(response?.error || '전환 준비에 실패했습니다.');
-      const modeName = mode === 'chat' ? 'Chat' : 'Work';
-      setStatus(`${modeName} 전환 준비 완료 · 모델 ${response.model || '기본값'} · 추론 ${response.thinkingEffort || '기본값'}${response.autoReload ? ' · 응답 완료 후 자동 재로딩' : ''}`, 'warn');
-      switchChatButton.dataset.active = mode === 'chat' ? 'true' : 'false';
-      switchWorkButton.dataset.active = mode === 'work' ? 'true' : 'false';
-    } catch (error) {
-      setStatus(error.message || String(error), 'error');
-    }
-  }
+  els.generate.addEventListener('click', async () => {
+    const config = configFromInputs();
+    plan = core.buildScenarioPlan(config);
+    await chrome.storage.local.set({ [CONFIG_KEY]: config });
+    render();
+    setStatus(plan.error || `최소 필수 시나리오 ${plan.requiredCount}회를 생성했습니다.`, plan.error ? 'error' : 'ok');
+  });
 
-  async function setCapture(mode) {
-    try {
-      const response = await send('CW_POPUP_SET_CAPTURE', { mode });
-      if (!response?.ok) throw new Error(response?.error || '기록 모드 설정에 실패했습니다.');
-      renderSnapshot(response.snapshot);
-    } catch (error) {
-      setStatus(error.message || String(error), 'error');
-    }
-  }
+  els.armNext.addEventListener('click', () => {
+    const scenario = nextMissingScenario();
+    if (scenario) armScenario(scenario);
+  });
 
-  switchChatButton.addEventListener('click', () => setSwitch('chat'));
-  switchWorkButton.addEventListener('click', () => setSwitch('work'));
-  captureChatButton.addEventListener('click', () => setCapture('chat'));
-  captureWorkButton.addEventListener('click', () => setCapture('work'));
+  els.resetCaptures.addEventListener('click', async () => {
+    await chrome.storage.local.set({ [CAPTURES_KEY]: [] });
+    captures = [];
+    activeScenario = null;
+    try { await send('RS_DISARM'); } catch {}
+    render();
+    setStatus('캡처 결과를 초기화했습니다. 시나리오 설정은 유지됩니다.', 'ok');
+  });
 
-  disableSwitchButton.addEventListener('click', async () => {
+  els.copyJson.addEventListener('click', async () => {
     try {
-      const response = await send('CW_POPUP_DISABLE_SWITCH');
-      if (!response?.ok) throw new Error(response?.error || '전환 해제에 실패했습니다.');
-      renderSnapshot(response.snapshot);
-      setStatus('직접 전환을 해제했습니다.', 'ok');
+      const text = JSON.stringify(exportObject(), null, 2);
+      await navigator.clipboard.writeText(text);
+      setStatus('결과 JSON을 복사했습니다. 그대로 ChatGPT에 붙여 넣으면 됩니다.', 'ok');
     } catch (error) {
-      setStatus(error.message || String(error), 'error');
+      setStatus(`복사 실패: ${error?.message || error}`, 'error');
     }
   });
 
-  resetButton.addEventListener('click', async () => {
-    try {
-      const response = await send('CW_POPUP_RESET');
-      if (!response?.ok) throw new Error(response?.error || '초기화에 실패했습니다.');
-      diagnosticsPanel.hidden = true;
-      diagnosticsText.value = '';
-      modelInput.value = '';
-      effortInput.value = '';
-      renderSnapshot(response.snapshot);
-      setStatus('사용자 기록과 입력 옵션을 초기화했습니다.', 'ok');
-    } catch (error) {
-      setStatus(error.message || String(error), 'error');
-    }
+  els.downloadJson.addEventListener('click', () => {
+    const text = JSON.stringify(exportObject(), null, 2);
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `chatgpt-request-snapshots-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('결과 JSON 파일 저장을 시작했습니다.', 'ok');
   });
 
-  diagnosticsButton.addEventListener('click', async () => {
-    try {
-      const response = await send('CW_POPUP_GET_DIAGNOSTICS');
-      if (!response?.ok) throw new Error(response?.error || '진단 정보를 읽지 못했습니다.');
-      diagnosticsText.value = response.text || '';
-      diagnosticsPanel.hidden = false;
-      diagnosticsText.focus();
-      diagnosticsText.select();
-      setStatus('진단 정보를 표시했습니다.', 'ok');
-    } catch (error) {
-      setStatus(error.message || String(error), 'error');
-    }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[CAPTURES_KEY]) return;
+    captures = Array.isArray(changes[CAPTURES_KEY].newValue) ? changes[CAPTURES_KEY].newValue : [];
+    if (activeScenario && captures.some((item) => item.scenarioId === activeScenario.id)) activeScenario = null;
+    render();
   });
 
-  copyButton.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(diagnosticsText.value || '');
-      setStatus('진단 정보를 클립보드에 복사했습니다.', 'ok');
-    } catch {
-      diagnosticsText.focus();
-      diagnosticsText.select();
-      setStatus('자동 복사가 차단되었습니다. 선택된 내용을 직접 복사해 주세요.', 'warn');
-    }
-  });
-
-  refresh();
+  load();
 })();

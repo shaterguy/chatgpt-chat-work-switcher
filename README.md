@@ -1,108 +1,76 @@
-# ChatGPT Chat ↔ Work Switcher — v0.1.0 Preview
+# ChatGPT Request Snapshot Calibrator
 
-Experimental Chrome extension for switching the request profile of the **same existing ChatGPT conversation** between Chat and Work without creating a new conversation or copying the message tree.
+`v0.2.0-dev1`은 기존 Chat ↔ Work Switcher의 요청 가로채기 기술을 **전송 순간 스냅샷 캘리브레이터**로 전환한 TEST 버전입니다.
 
-## Evidence used for this preview
+## 무엇을 기록하나
 
-A real ChatGPT capture on 2026-08-10 showed that native Chat and native Work both submit to the same endpoint:
+- 사용자가 시나리오를 `캡처 대기`로 지정한 뒤 실제 프롬프트를 전송할 때 발생하는 ChatGPT conversation POST 요청만 1회 캡처합니다.
+- 모델/추론 메뉴를 열거나 항목을 클릭하는 과정은 기록하지 않습니다.
+- 요청은 변경하지 않습니다. 전송 직전에 읽기만 하고 ChatGPT가 만든 원래 요청을 그대로 보냅니다.
+- 분석용으로 짧은 enum/boolean/number 등 안전한 primitive 제어값과 요청 구조 메타데이터를 저장합니다.
 
-- `POST /backend-api/f/conversation`
-- response: HTTP 200, `text/event-stream`
-- `conversation_id` remained consistent with the current `/c/<conversation_id>` route in both cases
-- `conversation_mode.kind` stayed `primary_assistant` in both cases
+## 저장하지 않는 것
 
-The control-plane differences observed in that pair were:
+다음 값은 구조적으로 제외합니다.
 
-| field | Chat | Work |
-| --- | --- | --- |
-| `model` | `gpt-5-6-thinking` | `gpt-5.6-luna-wm` |
-| `thinking_effort` | `max` | `standard` |
-| `conversation_origin` | absent | `tpp` |
-| `service_tier` | absent | `standard` |
+- 프롬프트와 메시지 원문
+- 첨부파일 및 파일 내용
+- conversation/message/parent/request/user/account/workspace ID 값
+- 쿠키, 세션, 인증 헤더, 토큰, 비밀번호/credential류
+- URL·이메일·UUID·긴 opaque 문자열
+- `client_contextual_info`와 대표적인 화면/시간 변동값
 
-Volatile browser context such as `client_contextual_info.time_since_loaded`, dimensions, timezone data and unrelated common fields are excluded from the switching profile.
+## 최소 캡처 시나리오
 
-The supplied v0.0.2 diagnostic had `comparison: null` despite containing one Chat and one Work sample. v0.1.0 recomputes the comparison on demand and falls back to the sanitized observed four-field profile above when no valid local comparison exists.
+확장프로그램 팝업에 현재 UI에서 선택 가능한 항목을 입력합니다.
 
-## What v0.1.0 Preview does
+- Chat 모델 목록 C개
+- Chat 추론 목록 Rc개
+- Work 모델 목록 W개
+- Work 추론 목록 Rw개
 
-- Adds **Chat로 전환** and **Work로 전환** controls to the toolbar popup and on-page switch bar.
-- Arms a target mode only for the current `/c/<conversation_id>` route.
-- Intercepts the next matching `POST /backend-api/f/conversation` submission in the page's MAIN world.
-- Applies only the captured control-plane differences above, or a newer locally captured profile if available.
-- Refuses to transform when the request does not match the expected source-mode profile.
-- Refuses to transform if the request `conversation_id` disagrees with the current URL conversation ID.
-- Restores `conversation_id` and the complete `messages` array from the original request after patching.
-- Never creates a new conversation and never hands off/copies messages.
-- Keeps the selected target mode armed for later matching submissions in that same conversation.
-- Automatically disables switching after HTTP/network failure or when the conversation changes.
-- Does not retry or resend a failed transformed message automatically.
+각 목록의 첫 번째 값이 기준값입니다. 필수 최소 횟수는 다음과 같습니다.
 
-## Important limitation
+`C + Rc - 1 + 2 × (W + Rw - 1)`
 
-This is the first live-switching preview. The request-level evidence supports a same-endpoint body-profile experiment, but server-side acceptance of **Chat → Work → Chat inside one already-existing conversation** still requires live account testing.
+구성은 다음 세 묶음입니다.
 
-A successful HTTP 200 is necessary but not sufficient proof that the server actually executed the requested target mode. The tester must verify the resulting ChatGPT UI/model behavior and then return the diagnostic JSON so the next revision can tighten the acceptance check.
+1. **Chat 첫 턴**: 기준 조합 1회 + 모델만 하나씩 변경 + 추론만 하나씩 변경
+2. **Work 첫 턴**: 기준 조합 1회 + 모델만 하나씩 변경 + 추론만 하나씩 변경
+3. **Work 동일 대화 후속 턴**: Work 기준 첫 대화를 계속 사용하면서 기준 후속 턴 1회 + 매 턴 모델만 변경 + 매 턴 추론만 변경
 
-## Install
+Work 모델과 추론이 각각 2개 이상이면 모델+추론을 동시에 바꾸는 **선택 교차검증 1회**도 표시합니다. 이것은 최소 필수 횟수에는 포함하지 않습니다.
 
-1. Download and unzip `chatgpt-chat-work-switcher-v0.1.0-preview.zip`.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Remove the old probe or replace its files, then choose **Load unpacked** for the folder containing `manifest.json`.
-5. Refresh all open `https://chatgpt.com` tabs once.
+## 사용 순서
 
-## First live test
+1. Chrome에서 이 ZIP을 압축 해제하고 `chrome://extensions` → 개발자 모드 → `압축해제된 확장 프로그램을 로드합니다`.
+2. 이미 열려 있던 ChatGPT 탭은 설치 후 한 번 새로고침합니다.
+3. ChatGPT 탭에서 확장프로그램 아이콘을 열고 Chat/Work 모델 및 추론 목록을 입력한 뒤 `시나리오 생성·저장`을 누릅니다.
+4. `다음 미캡처 대기`를 누릅니다.
+5. 팝업에 표시된 시나리오대로 ChatGPT UI의 모델·추론 상태를 맞춥니다. 이 클릭 과정은 기록되지 않습니다.
+6. 아무 짧은 프롬프트를 **한 번 실제 전송**합니다. 그 전송 요청만 캡처되고 대기는 자동 해제됩니다.
+7. 팝업을 다시 열고 다음 시나리오를 반복합니다.
+8. 필수 시나리오를 완료하면 `결과 JSON 복사` 또는 `JSON 파일 저장`으로 내보내 ChatGPT에 전달합니다.
 
-Use an expendable existing conversation first.
+## Work 후속 턴 주의점
 
-### Chat → Work
+`work-first-base`로 생성한 **동일한 Work conversation**을 그대로 유지한 채 `work-followup-*` 시나리오들을 순서대로 실행합니다. 이 구간이 Work에서 턴마다 모델 또는 추론을 바꾸었을 때 실제 전송값이 어떻게 달라지는지 확인하는 핵심 표본입니다.
 
-1. Open a conversation currently behaving as native Chat.
-2. Click the extension icon.
-3. Click **Work로 전환**.
-4. Send one harmless message in the same conversation.
-5. Confirm that the browser URL still has exactly the same `/c/<conversation_id>`.
-6. Check whether the response behaves as Work rather than ordinary Chat.
-7. Open **진단 보기** and copy the result.
+## 결과 형식
 
-### Work → Chat
+내보내는 JSON에는 다음이 포함됩니다.
 
-1. In the same conversation, click **Chat로 전환**.
-2. Send another harmless message.
-3. Confirm that the same `/c/<conversation_id>` is still present.
-4. Check whether the response now behaves as ordinary Chat.
-5. Copy diagnostics again.
+- 입력한 캘리브레이션 옵션과 최소 시나리오 계획
+- 시나리오별 sanitized request snapshot
+- 기준 시나리오 대비 `changed / added / removed` 차분
+- first/followup 판정, endpoint, transport 등 구조 메타데이터
 
-## Optional recalibration
+결과 JSON을 분석하면 SelfRun/Prompt Scheduler가 UI 메뉴를 찾지 않고 실제 전송 순간에 필요한 제어 필드만 원하는 프로필로 치환하는 Request Profile Engine의 기준 자료로 사용할 수 있습니다.
 
-The popup still exposes **Chat 기록** and **Work 기록** under `프로필 다시 기록`.
-
-If ChatGPT changes its private request schema:
-
-1. Record one native Chat submission.
-2. Record one native Work submission.
-3. The extension recomputes a control-only profile.
-4. With two stable samples per mode, the diagnostic confidence becomes `high`.
-
-## Safety rules
-
-The transformer never intentionally changes:
-
-- browser route / conversation URL
-- `conversation_id`
-- `messages`
-- message IDs / parent message IDs
-- prompt or message contents
-- attachments
-- tokens, cookies or authorization headers
-
-If the source request no longer resembles the captured source mode, the extension bypasses the request instead of guessing.
-
-## Development
+## 개발 검증
 
 ```bash
 npm run check
 ```
 
-CI runs syntax checks, unit tests, popup contract tests and packages the preview ZIP.
+CI는 구문 검사와 단위/계약 테스트 후 바로 로드 가능한 TEST ZIP을 Actions artifact로 생성합니다.

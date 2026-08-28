@@ -2,70 +2,61 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chat ↔ Work Switcher</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Request Snapshot Calibrator</title>
   <link rel="stylesheet" href="src/popup.css">
 </head>
 <body>
-  <main class="popup-shell">
+  <main>
     <header>
-      <h1>Chat ↔ Work Switcher</h1>
-      <span class="badge">v0.1.1 · PREVIEW</span>
+      <div>
+        <h1>Request Snapshot Calibrator</h1>
+        <p>v0.2.0-dev1 · 메뉴 클릭은 기록하지 않고 실제 프롬프트 전송 요청만 캡처합니다.</p>
+      </div>
+      <span class="pill" id="tab-status">확인 중</span>
     </header>
 
-    <p class="status" data-role="status">현재 ChatGPT 탭을 확인하는 중입니다…</p>
-
-    <section class="options" aria-label="switch options">
-      <label>
-        <span>모델</span>
-        <input data-role="model" list="model-options" placeholder="비워두면 목표 모드 기본값">
-      </label>
-      <label>
-        <span>추론 정도</span>
-        <input data-role="thinking-effort" list="effort-options" placeholder="비워두면 목표 모드 기본값">
-      </label>
-      <label class="reload-option">
-        <input type="checkbox" data-role="auto-reload" checked>
-        <span>전환 응답 완료 후 같은 대화를 자동 새로고침해서 새 모드 레이아웃으로 재진입</span>
-      </label>
+    <section class="card">
+      <h2>1. 캡처 옵션</h2>
+      <p class="hint">각 칸은 ChatGPT UI에 보이는 이름을 쉼표 또는 줄바꿈으로 입력합니다. 첫 번째 값이 비교 기준입니다.</p>
+      <label>Chat 모델</label>
+      <textarea id="chat-models" rows="2" placeholder="예: 기준 모델, 다른 모델"></textarea>
+      <label>Chat 추론 수준</label>
+      <textarea id="chat-reasoning" rows="2" placeholder="예: 기준 추론, High, Extra High"></textarea>
+      <label>Work 모델</label>
+      <textarea id="work-models" rows="2" placeholder="예: 기준 Work 모델, 다른 Work 모델"></textarea>
+      <label>Work 추론 수준</label>
+      <textarea id="work-reasoning" rows="2" placeholder="예: 기준 추론, 다른 추론"></textarea>
+      <div class="actions">
+        <button id="generate">시나리오 생성·저장</button>
+        <button id="reset-captures" class="secondary">캡처만 초기화</button>
+      </div>
+      <div id="plan-summary" class="summary"></div>
     </section>
 
-    <datalist id="model-options">
-      <option value="gpt-5-6-thinking"></option>
-      <option value="gpt-5.6-luna-wm"></option>
-    </datalist>
-    <datalist id="effort-options">
-      <option value="standard"></option>
-      <option value="max"></option>
-    </datalist>
-
-    <section class="switch-actions" aria-label="mode switch controls">
-      <button data-action="switch-chat">Chat로 전환</button>
-      <button data-action="switch-work">Work로 전환</button>
-    </section>
-    <button class="secondary full" data-action="disable-switch">전환 해제</button>
-
-    <p class="hint">모델/추론 정도를 비워두면 실제 캡처에서 확인된 목표 모드 기본값을 사용합니다. 직접 입력하면 그 값을 우선 적용합니다.</p>
-
-    <details>
-      <summary>프로필 다시 기록</summary>
-      <section class="actions" aria-label="capture controls">
-        <button class="secondary" data-action="capture-chat">Chat 기록 <span data-role="chat-count">0</span></button>
-        <button class="secondary" data-action="capture-work">Work 기록 <span data-role="work-count">0</span></button>
-      </section>
-      <p class="hint">새 ChatGPT 웹 버전에서 모드 값이 바뀌면 native Chat/Work를 각각 기록해 현재 PC의 프로필로 갱신할 수 있습니다.</p>
-    </details>
-
-    <section class="secondary-actions">
-      <button class="secondary" data-action="diagnostics">진단 보기</button>
-      <button class="secondary danger" data-action="reset">기록 초기화</button>
+    <section class="card">
+      <div class="section-head">
+        <h2>2. 최소 캡처 시나리오</h2>
+        <button id="arm-next">다음 미캡처 대기</button>
+      </div>
+      <p class="hint">각 시나리오에서 목표 모델·추론 상태를 UI로 만든 뒤 아무 짧은 프롬프트를 1회 전송하세요. 중간 메뉴 조작은 저장되지 않습니다.</p>
+      <div id="armed-status" class="armed">대기 중인 시나리오 없음</div>
+      <div id="scenario-list" class="scenario-list"></div>
     </section>
 
-    <section class="diagnostics" data-role="diagnostics-panel" hidden>
-      <textarea data-role="diagnostics-text" readonly spellcheck="false"></textarea>
-      <button class="secondary full" data-action="copy">진단 복사</button>
+    <section class="card">
+      <h2>3. 결과 내보내기</h2>
+      <p class="hint">원문 프롬프트·메시지·첨부·conversation/message ID·토큰·쿠키는 결과에 포함하지 않습니다.</p>
+      <div class="actions">
+        <button id="copy-json">결과 JSON 복사</button>
+        <button id="download-json" class="secondary">JSON 파일 저장</button>
+      </div>
+      <textarea id="export-preview" rows="8" readonly placeholder="캡처 결과가 여기에 표시됩니다."></textarea>
     </section>
+
+    <div id="status" class="status" data-kind="info">옵션을 입력해 시나리오를 생성하세요.</div>
   </main>
+  <script src="src/snapshot-core.js"></script>
   <script src="src/popup.js"></script>
 </body>
 </html>

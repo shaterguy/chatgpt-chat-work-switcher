@@ -1,28 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Chat ↔ Work Switcher Preview",
-  "version": "0.1.2",
-  "description": "Experimental same-conversation Chat/Work switcher with selectable model/reasoning and reliable toolbar controls.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "name": "ChatGPT Request Snapshot Calibrator",
+  "version": "0.2.0",
+  "version_name": "0.2.0-dev1",
+  "description": "Captures sanitized ChatGPT conversation-request snapshots only at prompt send time for model/reasoning calibration.",
+  "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://chatgpt.com/*"],
-  "background": {
-    "service_worker": "src/background.js"
-  },
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/profile-core.js", "src/bridge.js", "src/stream-monitor.js"],
+      "js": ["src/snapshot-core.js", "src/bridge.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/profile-core.js", "src/content.js", "src/switch-options.js", "src/action-toggle.js"],
-      "css": ["src/content.css"],
+      "js": ["src/content.js"],
       "run_at": "document_start"
     }
   ],
   "action": {
-    "default_title": "ChatGPT Chat ↔ Work Switcher Preview"
+    "default_title": "ChatGPT Request Snapshot Calibrator",
+    "default_popup": "popup.html"
   }
 }
