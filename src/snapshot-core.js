@@ -57,11 +57,9 @@
   function isConversationCandidate(url, method, body, origin = 'https://chatgpt.com') {
     if (String(method || 'GET').toUpperCase() !== 'POST') return false;
     const parsed = parseUrl(url, origin);
-    if (!parsed || parsed.origin !== origin || parsed.pathname !== '/backend-api/f/conversation') return false;
+    if (!parsed || parsed.origin !== origin || !parsed.pathname.includes('/backend-api/')) return false;
     if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
-    return Array.isArray(body.messages)
-      || typeof body.action === 'string'
-      || typeof body.parent_message_id === 'string';
+    return Array.isArray(body.messages);
   }
 
   function buildSnapshot(body, meta = {}) {
